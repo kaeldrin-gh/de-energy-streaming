@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Environments and secrets
+.env
+.env.*
+!.env.example
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Airflow
+airflow/logs/
+airflow/plugins/
+airflow/airflow.cfg
+airflow/airflow.db
+airflow/webserver_config.py
+
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate
+terraform/*.tfstate.*
+
+# Local pipeline scratch
+warehouse/
+exports/
+data/replay/
+localstack/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

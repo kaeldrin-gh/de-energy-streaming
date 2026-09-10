@@ -1,0 +1,10 @@
+# Extra Python packages for the Airflow image.
+# Provider packages are unpinned so pip resolves versions compatible with the
+# Airflow version in docker/airflow/Dockerfile; the ones that must match the
+# Spark cluster are pinned exactly.
+pyspark==3.5.9
+requests==2.32.3
+psycopg2-binary==2.9.9
+statsd==4.0.1
+apache-airflow-providers-apache-spark
+apache-airflow-providers-postgres

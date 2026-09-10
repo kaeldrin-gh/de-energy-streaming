@@ -1,0 +1,273 @@
+name: de-energy-streaming
+
+# ---------------------------------------------------------------------------
+# Shared environment
+# ---------------------------------------------------------------------------
+
+x-spark-common: &spark-common
+  build:
+    context: .
+    dockerfile: docker/spark/Dockerfile
+  environment: &spark-env
+    SPARK_NO_DAEMONIZE: "true"
+    PYTHONPATH: /opt/jobs:/opt
+    AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
+    AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
+    AWS_REGION: ${AWS_REGION:-eu-central-1}
+    S3_ENDPOINT: ${S3_ENDPOINT:-http://localstack:4566}
+    ICEBERG_CATALOG_URI: ${ICEBERG_CATALOG_URI:-jdbc:postgresql://postgres:5432/iceberg}
+    ICEBERG_WAREHOUSE: ${ICEBERG_WAREHOUSE:-s3a://energy-lake/warehouse}
+    CHECKPOINT_BASE: ${CHECKPOINT_BASE:-s3a://energy-lake/checkpoints}
+    KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-redpanda:9092}
+    KAFKA_TOPIC_PRICES: ${KAFKA_TOPIC_PRICES:-energy.prices.raw}
+    KAFKA_TOPIC_DLQ: ${KAFKA_TOPIC_DLQ:-energy.prices.invalid}
+    POSTGRES_USER: ${POSTGRES_USER:-energy}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-energy}
+    SERVING_DSN: postgresql://${POSTGRES_USER:-energy}:${POSTGRES_PASSWORD:-energy}@postgres:5432/serving
+    SMARD_BASE_URL: ${SMARD_BASE_URL:-https://www.smard.de/app/chart_data}
+    SMARD_FILTER: ${SMARD_FILTER:-4169}
+    SMARD_REGION: ${SMARD_REGION:-DE-LU}
+  volumes:
+    - ./spark/jobs:/opt/jobs:ro
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: docker/airflow/Dockerfile
+  environment:
+    <<: *spark-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-energy}:${POSTGRES_PASSWORD:-energy}@postgres:5432/airflow
+    AIRFLOW__CORE__FERNET_KEY: "ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Pg="
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    AIRFLOW__METRICS__STATSD_ON: "true"
+    AIRFLOW__METRICS__STATSD_HOST: statsd-exporter
+    AIRFLOW__METRICS__STATSD_PORT: "9125"
+    AIRFLOW__METRICS__STATSD_PREFIX: airflow
+    AIRFLOW_CONN_SPARK_DEFAULT: spark://spark-master:7077
+    AIRFLOW_CONN_SERVING: postgres://${POSTGRES_USER:-energy}:${POSTGRES_PASSWORD:-energy}@postgres:5432/serving
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - airflow-logs:/opt/airflow/logs
+    - ./spark/jobs:/opt/jobs:ro
+    - ./producer:/opt/producer:ro
+    - ivy-cache:/home/airflow/.ivy2
+
+# ---------------------------------------------------------------------------
+# Core services
+# ---------------------------------------------------------------------------
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-energy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-energy}
+      POSTGRES_DB: ${POSTGRES_DB:-energy}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-energy} -d ${POSTGRES_DB:-energy}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redpanda:
+    image: redpandadata/redpanda:v24.3.18
+    command:
+      - redpanda
+      - start
+      - --smp
+      - "1"
+      - --memory
+      - 1G
+      - --reserve-memory
+      - 0M
+      - --overprovisioned
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - PLAINTEXT://redpanda:9092
+    ports:
+      - "9092:9092"
+      - "9644:9644"
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+
+  redpanda-init:
+    image: redpandadata/redpanda:v24.3.18
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until rpk cluster health --brokers redpanda:9092 --exit-when-healthy >/dev/null 2>&1; do
+          echo "waiting for redpanda..."
+          sleep 2
+        done
+        rpk topic create energy.prices.raw energy.prices.invalid --brokers redpanda:9092 --partitions 3 || true
+        rpk topic list --brokers redpanda:9092
+    depends_on:
+      - redpanda
+
+  localstack:
+    image: localstack/localstack:3
+    environment:
+      SERVICES: s3
+      DEBUG: "0"
+      PERSISTENCE: "1"
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack-data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  spark-master:
+    <<: *spark-common
+    entrypoint: ["/opt/spark/bin/spark-class"]
+    command:
+      - org.apache.spark.deploy.master.Master
+      - --host
+      - spark-master
+      - --port
+      - "7077"
+      - --webui-port
+      - "8080"
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+
+  spark-worker:
+    <<: *spark-common
+    entrypoint: ["/opt/spark/bin/spark-class"]
+    command:
+      - org.apache.spark.deploy.worker.Worker
+      - spark://spark-master:7077
+      - --webui-port
+      - "8081"
+      - --cores
+      - "2"
+      - --memory
+      - 2G
+    ports:
+      - "8081:8081"
+    depends_on:
+      - spark-master
+
+  airflow-init:
+    <<: *airflow-common
+    command: bash -c "airflow db migrate && (airflow users create --username admin --password admin --firstname Air --lastname Flow --role Admin --email admin@example.com || true)"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8088:8088"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      spark-master:
+        condition: service_started
+
+  statsd-exporter:
+    image: prom/statsd-exporter:v0.27.2
+    command:
+      - --statsd.listen-udp=:9125
+      - --web.listen-address=:9102
+    ports:
+      - "9102:9102"
+
+  # -------------------------------------------------------------------------
+  # On-demand helpers (profiles)
+  # -------------------------------------------------------------------------
+
+  producer:
+    build:
+      context: .
+      dockerfile: docker/producer/Dockerfile
+    profiles: ["app"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      KAFKA_TOPIC_PRICES: ${KAFKA_TOPIC_PRICES:-energy.prices.raw}
+      SMARD_BASE_URL: ${SMARD_BASE_URL:-https://www.smard.de/app/chart_data}
+      SMARD_FILTER: ${SMARD_FILTER:-4169}
+      SMARD_REGION: ${SMARD_REGION:-DE-LU}
+    depends_on:
+      redpanda-init:
+        condition: service_completed_successfully
+    command: ["live"]
+
+  spark-submit:
+    <<: *spark-common
+    profiles: ["tools"]
+    entrypoint: ["/opt/spark/bin/spark-submit"]
+    command:
+      - --master
+      - spark://spark-master:7077
+      - /opt/jobs/stream_prices.py
+
+  terraform:
+    image: hashicorp/terraform:1.9
+    profiles: ["tools"]
+    entrypoint: ["terraform"]
+    working_dir: /workspace
+    volumes:
+      - ./terraform:/workspace
+
+  prometheus:
+    image: prom/prometheus:v2.53.5
+    profiles: ["observability"]
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - statsd-exporter
+
+  grafana:
+    image: grafana/grafana-oss:11.6.4
+    profiles: ["observability"]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      statsd-exporter:
+        condition: service_started
+
+volumes:
+  postgres-data:
+  redpanda-data:
+  localstack-data:
+  grafana-data:
+  ivy-cache:
+  airflow-logs:

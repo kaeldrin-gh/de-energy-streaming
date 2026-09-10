@@ -1,0 +1,22 @@
+apiVersion: 1
+
+datasources:
+  - name: Energy Postgres
+    uid: energy-postgres
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    database: serving
+    user: energy
+    secureJsonData:
+      password: energy
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+    isDefault: true
+
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
