@@ -42,3 +42,16 @@ COPY spark/conf/metrics.properties /opt/spark/conf/metrics.properties
 ENV PYTHONPATH=/opt:/opt/jobs
 
 WORKDIR /opt/spark
+
+# The Kafka connector jar is NOT fat: it needs kafka-clients and commons-pool2
+# on the classpath, and Spark does not ship either. Versions are taken from the
+# connector POM (spark-sql-kafka-0-10_2.12:3.5.9 -> kafka-clients:3.4.1,
+# commons-pool2:2.11.1). Kept as the last layer so rebuilds stay cheap.
+ARG KAFKA_CLIENTS_VERSION=3.4.1
+ARG COMMONS_POOL2_VERSION=2.11.1
+
+RUN set -eux; \
+    curl -fsSL -o "/opt/spark/jars/kafka-clients-${KAFKA_CLIENTS_VERSION}.jar" \
+        "https://repo1.maven.org/maven2/org/apache/kafka/kafka-clients/${KAFKA_CLIENTS_VERSION}/kafka-clients-${KAFKA_CLIENTS_VERSION}.jar"; \
+    curl -fsSL -o "/opt/spark/jars/commons-pool2-${COMMONS_POOL2_VERSION}.jar" \
+        "https://repo1.maven.org/maven2/org/apache/commons/commons-pool2/${COMMONS_POOL2_VERSION}/commons-pool2-${COMMONS_POOL2_VERSION}.jar"
