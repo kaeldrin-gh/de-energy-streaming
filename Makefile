@@ -4,9 +4,8 @@ TF_VARS = -var localstack_endpoint=http://localstack:4566
 .PHONY: help up down ps logs init infra demo live stream backfill obs test lint fmt sample clean
 
 help: ## show available targets
-	@echo "de-energy-streaming"
-	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-8s %s\n", $$1, $$2}'
+	@echo de-energy-streaming targets:
+	@echo   up down ps logs init infra demo live stream backfill obs test lint fmt sample clean
 
 up: ## start core stack (Airflow, Spark, Kafka, Postgres, LocalStack) and provision S3
 	$(COMPOSE) up -d --build

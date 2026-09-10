@@ -73,6 +73,9 @@ make demo        # replay the bundled real SMARD sample into Kafka (offline, det
 make stream      # Kafka -> Iceberg bronze (foreground; Ctrl+C to stop)
 ```
 
+On Windows without `make`: `scoop install make` (or run the underlying
+`docker compose` commands from the Makefile manually).
+
 Then open:
 
 | Service | URL | Credentials |
