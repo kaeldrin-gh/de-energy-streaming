@@ -1,10 +1,16 @@
 # Extra Python packages for the Airflow image.
-# Provider packages are unpinned so pip resolves versions compatible with the
-# Airflow version in docker/airflow/Dockerfile; the ones that must match the
-# Spark cluster are pinned exactly.
+#
+# Do NOT leave the providers unpinned: releases after these require
+# apache-airflow>=2.11 and pip will try to drag Airflow 3.x core into this
+# 2.10.5 image (it abdicates with ResolutionTooDeep). These exact versions are
+# the ones Apache validated in the Airflow 2.10.5 constraints file:
+# https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.10.txt
+#
+# pyspark is pinned to match the Spark cluster exactly so SparkSubmitOperator
+# (client mode) drives a 3.5.9 driver/executor pair.
+apache-airflow-providers-apache-spark==5.0.0
+apache-airflow-providers-postgres==6.0.0
 pyspark==3.5.9
 requests==2.32.3
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.10
 statsd==4.0.1
-apache-airflow-providers-apache-spark
-apache-airflow-providers-postgres
