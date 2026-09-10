@@ -16,6 +16,19 @@ from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOpe
 SPARK_CONN_ID = "spark_default"
 JOBS_DIR = "/opt/jobs"
 
+# The jobs run in client mode, so the Spark driver lives inside this Airflow
+# container and needs the Iceberg/Kafka/S3A/Postgres jars on its classpath.
+# Spark resolves them from Maven Central on first run and caches them in the
+# `ivy-cache` volume (mounted at /home/airflow/.ivy2), then ships them to the
+# workers, which already have them baked into the image.
+SPARK_PACKAGES = [
+    "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.8.1",
+    "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.9",
+    "org.apache.hadoop:hadoop-aws:3.3.4",
+    "com.amazonaws:aws-java-sdk-bundle:1.12.262",
+    "org.postgresql:postgresql:42.7.3",
+]
+
 DEFAULT_ARGS = {"retries": 2, "retry_delay": pendulum.duration(minutes=2)}
 
 
@@ -28,6 +41,7 @@ def spark_task(
         application=application,
         name=task_id,
         application_args=application_args or [],
+        packages=SPARK_PACKAGES,
         verbose=False,
     )
 
