@@ -56,27 +56,7 @@
         "uid": "energy-postgres"
       },
       "fieldConfig": {
-        "defaults": {
-          "mappings": [
-            {
-              "options": {
-                "fail": {
-                  "color": "red",
-                  "index": 0
-                },
-                "ok": {
-                  "color": "green",
-                  "index": 1
-                },
-                "warn": {
-                  "color": "orange",
-                  "index": 2
-                }
-              },
-              "type": "value"
-            }
-          ]
-        },
+        "defaults": {},
         "overrides": []
       },
       "gridPos": {
@@ -87,25 +67,18 @@
       },
       "id": 2,
       "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value"
+        "showHeader": true
       },
       "targets": [
         {
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT status FROM serving.pipeline_health WHERE check_name = 'serving_freshness'",
+          "rawSql": "SELECT status, detail FROM serving.pipeline_health WHERE check_name = 'serving_freshness'",
           "refId": "A"
         }
       ],
-      "title": "Serving freshness",
-      "type": "stat"
+      "title": "Pipeline health",
+      "type": "table"
     },
     {
       "datasource": {
@@ -152,9 +125,7 @@
         "uid": "prometheus"
       },
       "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
+        "defaults": {},
         "overrides": []
       },
       "gridPos": {
@@ -165,28 +136,26 @@
       },
       "id": 4,
       "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
+        "showHeader": true
       },
       "targets": [
         {
           "expr": "up",
+          "format": "table",
+          "instant": true,
           "refId": "A"
         }
       ],
-      "title": "Scrape targets up (Airflow statsd, Spark master/worker)",
-      "type": "timeseries"
+      "title": "Scrape targets (current)",
+      "type": "table"
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["energy", "de"],
+  "tags": [
+    "energy",
+    "de"
+  ],
   "templating": {
     "list": []
   },
