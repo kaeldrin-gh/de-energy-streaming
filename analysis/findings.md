@@ -20,9 +20,10 @@ python analysis/make_charts.py   # regenerates the charts in docs/images/
 | **20.5% vs 3.1%** | share of hours below zero on weekends vs weekdays |
 | **−€0.83 vs €192** | average weekend-midday price vs weekday-evening price — the cheapest window of the week is *free* |
 
-One actionable conclusion: **a weekend midday is the cheapest segment of the German
-electricity week — on average the market paid consumers to use power** (−€0.83/MWh over
-11:00–14:00), while a weekday evening (18:00–20:00) cost €191.89/MWh: a gap of ~€193/MWh.
+The practical takeaway: a weekend midday is the cheapest window of the German
+electricity week. The market paid consumers to use power on average (−€0.83/MWh
+over 11:00–14:00), while a weekday evening (18:00–20:00) cost €191.89/MWh, a gap
+of about €193/MWh.
 
 ## 1. The duck curve, priced
 
@@ -60,7 +61,7 @@ not uniform: it is concentrated midday, where the weekend curve collapses into n
 territory while the weekday curve stays well above zero. A consumer with flexible load
 should think in terms of *weekend midday*, not "the weekend".
 
-## 4. Volatility is the product
+## 4. What intraday volatility is worth
 
 The average **intraday spread (max − min per local day) is €186.36/MWh** — nearly twice the
 average price level. For battery storage, EVs, heat pumps, or any flexible load, this is the

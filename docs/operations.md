@@ -64,6 +64,11 @@ Web UIs (all local, default credentials):
 | Spark master | http://localhost:8080 | cluster + apps |
 | Spark worker | http://localhost:8081 | |
 
+The Spark master UI after a few days of history (the long-running streaming
+application plus the batch jobs submitted by Airflow):
+
+![Spark master](images/spark-master.png)
+
 ## Failure modes and first checks
 
 | Symptom | First check | Cause / fix |

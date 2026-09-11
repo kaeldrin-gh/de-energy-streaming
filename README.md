@@ -1,212 +1,136 @@
 # de-energy-streaming
 
 [![ci](https://github.com/kaeldrin-gh/de-energy-streaming/actions/workflows/ci.yml/badge.svg)](https://github.com/kaeldrin-gh/de-energy-streaming/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-A real-time data platform for **German day-ahead electricity prices**: SMARD.de
-(Bundesnetzagentur) → Kafka → Spark Structured Streaming → Apache Iceberg on
-S3 → PostgreSQL/Grafana, orchestrated with Airflow and provisioned with
-Terraform.
+A streaming data platform for German day-ahead electricity prices. Market data
+from SMARD.de (Bundesnetzagentur) flows through Kafka into Spark Structured
+Streaming, lands in an Apache Iceberg lakehouse, and is modeled into hourly and
+daily marts served through PostgreSQL and Grafana. Airflow orchestrates the
+batch jobs; Terraform manages the storage layer. The full stack runs locally in
+Docker with no cloud account, and the same Spark/Iceberg code points at AWS S3
+by changing environment variables.
 
-Everything runs **locally with Docker, without a single cloud account or paid
-service** — and the code is written so the exact same Spark/Iceberg logic points
-at real AWS S3 (or any S3-compatible object store) by changing environment
-variables.
-
-> Sibling project: [nl-energy-warehouse](https://github.com/kaeldrin-gh/nl-energy-warehouse)
-> covers batch/dbt analytics engineering for Dutch power prices. This repo is
-> the streaming + orchestration counterpart on the German market.
-
-## What it demonstrates
-
-| Skill | Where |
-| --- | --- |
-| Streaming ingestion (Kafka API) | Redpanda + keyed JSON messages, DLQ for malformed records |
-| Spark Structured Streaming | `spark/jobs/stream_prices.py`: checkpointing, `foreachBatch`, MERGE |
-| Apache Iceberg lakehouse | Bronze/silver/gold medallion on S3A (LocalStack locally, AWS-ready) |
-| Revision-aware upserts | Idempotent ingestion: replays and corrections cannot corrupt history (ADR 0002) |
-| Orchestration | Airflow DAGs submitting Spark jobs in client mode with retries |
-| Infrastructure as code | Terraform provisions the lakehouse bucket against the real S3 API (LocalStack) |
-| Serving layer | PostgreSQL upserts + provisioned Grafana dashboard + Prometheus/statsd metrics |
-| Testing & CI | pytest (parsers, replay determinism, key stability), ruff, compose config + `terraform validate` in GitHub Actions |
-| Analysis, not just plumbing | `analysis/findings.md`: every number computed from the marts and re-runnable via `make bi` |
-| Operational maturity | Health-check DAG, runbook, incident-driven ADRs |
+Batch counterpart: [nl-energy-warehouse](https://github.com/kaeldrin-gh/nl-energy-warehouse)
+covers dbt-based analytics engineering on Dutch power prices.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    SMARD["SMARD.de<br/>Bundesnetzagentur"] -->|live poll / offline replay| P["producer<br/>(Python)"]
-    P -->|"JSON keyed by region+hour"| K[("Redpanda<br/>Kafka API")]
-    K --> S["Spark<br/>Structured Streaming"]
-    S -->|"MERGE, newer fetched_at wins"| B[("Iceberg bronze<br/>S3 / LocalStack")]
+    SMARD["SMARD.de"] -->|live poll / replay| P["producer (Python)"]
+    P -->|keyed JSON| K[("Redpanda (Kafka API)")]
+    K --> S["Spark Structured Streaming"]
+    S -->|"MERGE, newest revision wins"| B[("Iceberg bronze on S3")]
     S -->|malformed records| D[("DLQ topic")]
-    B --> T["Spark batch transform<br/>(Airflow hourly)"]
+    B --> T["Spark batch transform"]
     T --> SI[("Iceberg silver + gold")]
-    T -->|upsert| PG[("Postgres<br/>serving schema")]
+    T -->|upsert| PG[("Postgres serving")]
     PG --> G["Grafana"]
     A["Airflow"] -. submits .-> S
     A -. submits .-> T
-    B -->|"re-affine history"| BF["Backfill job<br/>(Airflow daily)"]
 ```
 
-One namespace, three layers:
+One Iceberg namespace, three layers. **Bronze** keeps one row per
+`(region, delivery_ts)` with revision-aware upserts, so replays and upstream
+corrections cannot corrupt history (ADR 0002). **Silver** adds Berlin local
+time, weekend and negative-price flags. **Gold** holds daily aggregates, also
+upserted into the Postgres serving schema.
 
-- **bronze** — one row per `(region, delivery_ts)`, revision-aware (newest
-  `fetched_at` wins), partitioned by day
-- **silver** — deduplicated and enriched with Europe/Berlin local time,
-  weekend flag, peak/off-peak hour, negative-price flag
-- **gold** — daily aggregates (`avg`/`min`/`max`, negative-price hours), written
-  to both Iceberg and the Postgres serving schema
+The jobs: `producer/` polls SMARD and publishes one message per delivery hour;
+`spark/jobs/stream_prices.py` writes bronze and routes malformed records to a
+dead-letter topic; `backfill_prices.py` loads history through the same MERGE;
+`transform_silver.py` rebuilds silver and gold and refreshes serving; the
+`energy_healthcheck` DAG verifies serving freshness every 30 minutes.
 
-## What it looks like
+## Screenshots
 
-Real screenshots from this repository's own local stack:
-
-| Grafana — serving layer | Airflow — hourly Spark orchestration |
+| Grafana (serving layer) | Airflow (hourly Spark orchestration) |
 | --- | --- |
 | ![Grafana dashboard](docs/images/grafana-dashboard.png) | ![Airflow DAG grid](docs/images/airflow-dag-grid.png) |
 
-![Spark master](docs/images/spark-master.png)
-
-The Grafana dashboard reads the warehouse's own marts (day-ahead prices,
-pipeline health, negative-price hours) plus Prometheus scrape targets. The
-Airflow grid shows the hourly `transform_silver_gold` task succeeding. The
-Spark master UI shows the long-running streaming application alongside the
-batch jobs submitted by Airflow.
+Both are from the local stack; the Spark master UI is at
+http://localhost:8080 once it is running.
 
 ## What the data says
 
-![Duck curve](docs/images/findings_duck_curve.png)
+![Average price by hour](docs/images/findings_duck_curve.png)
 
-Fourteen weeks of real SMARD.de prices (2,328 hours, Jun–Sep 2026), computed entirely from
-this repo's own marts — every number re-runnable with `make bi`:
+Fourteen weeks of real prices (2,328 hours, June to September 2026), computed
+from the marts and re-runnable with `make bi`:
 
-| | |
+| Metric | Value |
 | --- | --- |
-| **€178 vs €38** | evening peak (18–20h) vs midday trough (11–14h) — the duck curve, priced |
-| **7.9%** | of all hours cleared below zero (185 hours, min −€45.87/MWh) |
-| **20.5% vs 3.1%** | negative-price share on weekends vs weekdays |
-| **−€0.83 vs €192** | weekend midday vs weekday evening — the cheapest window of the week is *free* |
+| Evening peak vs midday trough | €178 vs €38 per MWh |
+| Hours priced below zero | 7.9% (minimum −€45.87/MWh) |
+| Negative share, weekends vs weekdays | 20.5% vs 3.1% |
+| Weekend midday vs weekday evening | −€0.83 vs €192 per MWh |
 
 Full analysis, charts and caveats: [analysis/findings.md](analysis/findings.md).
 
 ## Quickstart
 
-Prerequisites: **Docker Desktop** (free; no account or payment required) with
-~8 GB RAM available. On Windows, Docker Desktop needs WSL2 enabled.
+Requires Docker Desktop (free) with about 8 GB of RAM; on Windows, enable WSL2.
 
 ```bash
 git clone https://github.com/kaeldrin-gh/de-energy-streaming.git
 cd de-energy-streaming
 
-make up          # build + start Airflow, Spark, Redpanda, Postgres, LocalStack; provision S3
-make demo        # replay the bundled real SMARD sample into Kafka (offline, deterministic)
-make stream      # Kafka -> Iceberg bronze (foreground; Ctrl+C to stop)
+make up        # start the stack and create the S3 bucket
+make demo      # replay the bundled 168-hour SMARD sample (offline)
+make stream    # run the Kafka to Iceberg streaming job (Ctrl+C to stop)
+
+make live      # or poll SMARD every 60 seconds (no API key needed)
+make backfill  # or load the last few weeks of history
+make obs       # add Grafana and Prometheus
 ```
 
-On Windows without `make`: `scoop install make` (or run the underlying
-`docker compose` commands from the Makefile manually).
-
-Then open:
-
-| Service | URL | Credentials |
+| Service | URL | Login |
 | --- | --- | --- |
 | Airflow | http://localhost:8088 | `admin` / `admin` |
-| Spark master | http://localhost:8080 | — |
+| Spark master | http://localhost:8080 | |
 | Grafana (`make obs`) | http://localhost:3000 | `admin` / `admin` |
 | LocalStack S3 | http://localhost:4566 | `test` / `test` |
-| Kafka (host) | `localhost:9092` | — |
 
-Trigger the batch layer from the Airflow UI (`energy_batch_pipeline`,
-`energy_history_backfill`), or run it directly:
+Configuration is environment-driven and the defaults in `.env.example` match
+the compose stack, so nothing needs editing. Pointing Spark at real S3 means
+setting `S3_ENDPOINT`, `ICEBERG_WAREHOUSE` and credentials; no code changes.
 
-```bash
-make backfill    # revision-aware backfill from the live SMARD API
-```
-
-Live ingestion needs **no API key**:
+## Tests
 
 ```bash
-make live        # polls SMARD every 60 s and publishes new/changed hours
-```
-
-### What actually runs where
-
-- `producer` (Python) fetches SMARD weekly chunks, validates them, and emits one
-  Kafka message per delivery hour, keyed by `region|delivery_ts`.
-- `stream_prices.py` parses, validates, and MERGEs micro-batches into
-  `lake.energy.bronze_prices`; malformed records go to `energy.prices.invalid`.
-- `backfill_prices.py` runs the **same MERGE** in batch mode, so history can be
-  re-ingested at any time without regressing newer revisions.
-- `transform_silver.py` rebuilds a 7-day sliding window into silver/gold
-  (idempotent by construction) and upserts the serving tables for Grafana.
-- `energy_healthcheck` DAG checks serving freshness (3 h SLA) every 30 minutes
-  and records results in `serving.pipeline_health`.
-
-## Data source
-
-[SMARD.de](https://www.smard.de/) is the Bundesnetzagentur's market data
-platform. The pipeline uses the public chart-data endpoints (filter `4169`,
-region `DE-LU`, hourly resolution) — no key, no registration, verified against
-the live service:
-
-```
-index : https://www.smard.de/app/chart_data/4169/DE-LU/index_hour.json
-chunk : https://www.smard.de/app/chart_data/4169/DE-LU/4169_DE-LU_hour_<week>.json
-```
-
-`data/sample/latest.json` is **real captured data** (168 hours ending
-2026-09-10), committed so the full pipeline demos without network access.
-Refresh it any time with `make sample`.
-
-## Testing
-
-```bash
-python -m pytest -q          # 10 unit tests, no Docker or network needed
-python -m pytest -m integration -q   # live SMARD smoke test (network)
+python -m pytest -q                  # 10 unit tests, no Docker or network
+python -m pytest -m integration -q   # live SMARD smoke test
 ruff check . && ruff format --check .
 ```
 
-CI (`.github/workflows/ci.yml`) runs lint, tests, `docker compose config`, and
-`terraform fmt -check` + `terraform validate` on every push.
+CI runs lint, tests, `docker compose config`, and Terraform validation on every
+push. Operational commands and failure modes are in
+[docs/operations.md](docs/operations.md).
 
-## Configuration
+## Design notes
 
-All configuration is environment-driven with safe local defaults; see
-`.env.example`. Nothing needs editing for the local stack. To point Spark at
-real S3, set `S3_ENDPOINT`, `ICEBERG_WAREHOUSE`, `AWS_ACCESS_KEY_ID`, and
-`AWS_SECRET_ACCESS_KEY` — no code changes.
+- [ADR 0001: local-first, zero-cost stack](docs/decisions/0001-local-first-zero-cost.md)
+- [ADR 0002: revision-aware upserts](docs/decisions/0002-revision-aware-upserts.md)
 
-## Design decisions
-
-- [ADR 0001 — Local-first, zero-cost stack](docs/decisions/0001-local-first-zero-cost.md)
-- [ADR 0002 — Revision-aware upserts instead of append-only ingestion](docs/decisions/0002-revision-aware-upserts.md)
-
-Operational commands and failure modes: [docs/operations.md](docs/operations.md).
-
-## Repository layout
+## Layout
 
 ```
-producer/            SMARD client, Kafka sink, CLI (live / replay)
-spark/jobs/          stream_prices.py, backfill_prices.py, transform_silver.py, common.py
-airflow/dags/        batch pipeline + health check DAGs
-terraform/           lakehouse bucket (LocalStack / AWS)
-docker/              Dockerfiles, Postgres init SQL, Prometheus/Grafana provisioning
-tests/               parser, replay, and message-contract tests
-data/sample/         real captured SMARD data for offline runs
-docs/decisions/      architecture decision records
+producer/       SMARD client, Kafka sink, CLIs
+spark/jobs/     streaming, backfill and transform jobs
+airflow/dags/   batch pipeline and health check
+analysis/       BI queries, chart generation, findings
+terraform/      lakehouse bucket (LocalStack or AWS)
+docker/         images, Postgres init, Grafana and Prometheus provisioning
+tests/          parser, replay and message contract tests
 ```
 
 ## Roadmap
 
-- Compaction/expiry maintenance job for the Iceberg tables
-- OpenLineage/Marquez lineage between producer, Spark, and serving
-- Weather join (DWD open data) for renewable-supply context
-- Alert routing (email/webhook) on health-check failures
-- Chef-of-the-month: `spark-submit` via Kubernetes in a kind cluster profile
+- DWD weather join to attribute negative prices to wind and solar output
+- Iceberg compaction and snapshot expiry job
+- Alert routing for health-check failures
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Data © Bundesnetzagentur / SMARD.de (DL-DE/BY-2.0).
+MIT, see [LICENSE](LICENSE). Data © Bundesnetzagentur / SMARD.de (DL-DE/BY-2.0).
