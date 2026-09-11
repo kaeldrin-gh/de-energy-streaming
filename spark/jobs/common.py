@@ -14,7 +14,10 @@ import os
 from pyspark.sql import SparkSession
 
 CATALOG = "lake"
-NAMESPACE = "energy"
+# Fully qualified: the session's default catalog stays spark_catalog so that
+# temporary views created in foreachBatch resolve normally; Iceberg tables are
+# addressed via their 3-part names instead.
+NAMESPACE = f"{CATALOG}.energy"
 BRONZE = f"{NAMESPACE}.bronze_prices"
 SILVER = f"{NAMESPACE}.silver_prices"
 GOLD_DAILY = f"{NAMESPACE}.gold_daily"
@@ -43,16 +46,15 @@ def build_spark(app_name: str) -> SparkSession:
         )
         .config(f"spark.sql.catalog.{CATALOG}.jdbc.user", env("POSTGRES_USER", "energy"))
         .config(f"spark.sql.catalog.{CATALOG}.jdbc.password", env("POSTGRES_PASSWORD", "energy"))
-        # V1 migrates the JDBC catalog schema to include view support. Without
-        # it, Iceberg's catalog initialization is view-disabled and any view
-        # operation (including the ones Spark issues during MERGE planning)
-        # fails with UnsupportedOperationException.
+        # V1 keeps the JDBC catalog schema current (enables catalog-level view
+        # support; migrated on first connect). Iceberg tables are addressed by
+        # 3-part name - the session default catalog must stay spark_catalog so
+        # temp views used inside MERGE resolve normally.
         .config(f"spark.sql.catalog.{CATALOG}.jdbc.schema-version", "V1")
         .config(
             f"spark.sql.catalog.{CATALOG}.warehouse",
             env("ICEBERG_WAREHOUSE", "s3a://energy-lake/warehouse"),
         )
-        .config("spark.sql.defaultCatalog", CATALOG)
         .config("spark.sql.shuffle.partitions", os.environ.get("SPARK_SHUFFLE_PARTITIONS", "4"))
         # S3A against LocalStack (path-style, no TLS, static test credentials)
         .config("spark.hadoop.fs.s3a.endpoint", env("S3_ENDPOINT", "http://localstack:4566"))
