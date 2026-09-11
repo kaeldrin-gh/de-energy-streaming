@@ -59,6 +59,22 @@ One namespace, three layers:
 - **gold** — daily aggregates (`avg`/`min`/`max`, negative-price hours), written
   to both Iceberg and the Postgres serving schema
 
+## What it looks like
+
+Real screenshots from this repository's own local stack:
+
+| Grafana — serving layer | Airflow — hourly Spark orchestration |
+| --- | --- |
+| ![Grafana dashboard](docs/images/grafana-dashboard.png) | ![Airflow DAG grid](docs/images/airflow-dag-grid.png) |
+
+![Spark master](docs/images/spark-master.png)
+
+The Grafana dashboard reads the warehouse's own marts (day-ahead prices,
+pipeline health, negative-price hours) plus Prometheus scrape targets. The
+Airflow grid shows the hourly `transform_silver_gold` task succeeding. The
+Spark master UI shows the long-running streaming application alongside the
+batch jobs submitted by Airflow.
+
 ## Quickstart
 
 Prerequisites: **Docker Desktop** (free; no account or payment required) with
