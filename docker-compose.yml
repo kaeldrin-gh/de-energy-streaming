@@ -133,6 +133,28 @@ services:
       timeout: 5s
       retries: 12
 
+  # Idempotent safety net: LocalStack's persistence can be lossy across
+  # ungraceful restarts, and a missing bucket breaks every Spark job. Terraform
+  # still owns the bucket (versioning etc.); this just recreates it if absent.
+  localstack-init:
+    image: localstack/localstack:3
+    depends_on:
+      localstack:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until aws s3api list-buckets --endpoint-url http://localstack:4566 >/dev/null 2>&1; do
+          echo "waiting for localstack..."
+          sleep 2
+        done
+        aws s3 mb s3://energy-lake --endpoint-url http://localstack:4566 || true
+        aws s3 ls --endpoint-url http://localstack:4566
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: eu-central-1
+
   spark-master:
     <<: *spark-common
     entrypoint: ["/opt/spark/bin/spark-class"]

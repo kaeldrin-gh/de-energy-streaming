@@ -68,7 +68,8 @@ Web UIs (all local, default credentials):
 
 | Symptom | First check | Cause / fix |
 | --- | --- | --- |
-| `make stream` exits with checkpoint errors | `docker compose logs localstack` | Bucket missing: run `make infra` |
+| `make stream` exits with "NoSuchBucket" | `docker compose logs localstack` | LocalStack volume was reset. `docker compose up -d` recreates the bucket via `localstack-init`; or run `make infra` |
+| `make stream` exits with Iceberg "NotFoundException" for a metadata file | `docker compose exec postgres psql -U energy -d iceberg -c "SELECT * FROM iceberg_tables;"` | Split-brain: the Postgres catalog remembers tables whose files were lost with the LocalStack volume. Clear the stale entries (`DELETE FROM iceberg_tables WHERE table_namespace='energy';`) and restart the stream; `make backfill` + a transform rebuild the data |
 | First Airflow Spark task slow | task log | Ivy resolves ~100 MB of connector jars once, then cached in the `ivy-cache` volume |
 | DLQ topic growing | consume `energy.prices.invalid` | Producer schema drift; inspect messages and update `MESSAGE_SCHEMA` in `spark/jobs/stream_prices.py` |
 | Serving table empty | `serve` after backfill | Batch/stream hasn't run yet; trigger `energy_batch_pipeline` in Airflow or `make backfill` |
