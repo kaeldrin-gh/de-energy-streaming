@@ -24,3 +24,8 @@ RUN pip install --no-cache-dir -r /opt/airflow/requirements.txt \
 
 # Pre-create mount points so named volumes inherit airflow ownership.
 RUN mkdir -p /opt/airflow/logs /home/airflow/.ivy2
+
+# Share the local cluster's executor sizing with Airflow-submitted drivers
+# (pip-installed PySpark reads spark-defaults.conf from SPARK_CONF_DIR).
+COPY spark/conf/spark-defaults.conf /opt/spark-conf/spark-defaults.conf
+ENV SPARK_CONF_DIR=/opt/spark-conf
