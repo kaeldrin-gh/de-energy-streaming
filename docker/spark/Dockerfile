@@ -38,6 +38,7 @@ RUN python3 -m pip install --no-cache-dir \
 COPY spark/jobs /opt/jobs
 COPY producer /opt/producer
 COPY spark/conf/metrics.properties /opt/spark/conf/metrics.properties
+COPY spark/conf/spark-defaults.conf /opt/spark/conf/spark-defaults.conf
 
 ENV PYTHONPATH=/opt:/opt/jobs
 

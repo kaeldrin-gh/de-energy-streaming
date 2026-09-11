@@ -158,7 +158,7 @@ services:
       - --cores
       - "2"
       - --memory
-      - 2G
+      - 3G
     ports:
       - "8081:8081"
     depends_on:
