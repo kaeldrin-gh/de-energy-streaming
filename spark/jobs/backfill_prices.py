@@ -13,13 +13,13 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 
-# The Spark containers run Python 3.10 (Ubuntu 22.04); datetime.UTC exists only
-# in 3.11+. Keep this alias and leave UP017 disabled for spark/jobs (pyproject).
-UTC = timezone.utc
-
 from common import build_spark, ensure_tables, env, merge_bronze_from_view
 
 from producer.smard import SmardClient
+
+# The Spark containers run Python 3.10 (Ubuntu 22.04); datetime.UTC exists only
+# in 3.11+. Keep this alias and leave UP017 disabled for spark/jobs (pyproject).
+UTC = timezone.utc
 
 BRONZE_SCHEMA = (
     "region string, delivery_ts timestamp, price_eur_mwh double, "
