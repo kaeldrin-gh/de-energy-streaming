@@ -29,7 +29,7 @@ def load_sample(path: Path, region: str | None = None) -> list[PricePoint]:
         points.append(
             PricePoint(
                 region=region,
-                delivery_ts_utc=dt.datetime.fromtimestamp(ts_ms / 1000, tz=dt.UTC),
+                delivery_ts_utc=dt.datetime.fromtimestamp(ts_ms / 1000, tz=dt.timezone.utc),
                 price_eur_mwh=float(price),
             )
         )

@@ -31,8 +31,9 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ruff.lint.per-file-ignores]
-# Spark jobs execute on Python 3.10 inside the containers (datetime.UTC is 3.11+).
+# Spark containers and the backfill job run Python 3.10 (datetime.UTC is 3.11+).
 "spark/jobs/*.py" = ["UP017"]
+"producer/*.py" = ["UP017"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

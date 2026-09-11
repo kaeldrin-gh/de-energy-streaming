@@ -29,6 +29,7 @@ x-spark-common: &spark-common
     SMARD_REGION: ${SMARD_REGION:-DE-LU}
   volumes:
     - ./spark/jobs:/opt/jobs:ro
+    - ./producer:/opt/producer:ro
 
 x-airflow-common: &airflow-common
   build:

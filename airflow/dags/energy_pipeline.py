@@ -41,7 +41,10 @@ def spark_task(
         application=application,
         name=task_id,
         application_args=application_args or [],
-        packages=SPARK_PACKAGES,
+        # The provider injects this straight into `spark-submit --packages`;
+        # it must be a comma-separated STRING (a list breaks its command
+        # masking with "sequence item N: expected str instance, list found").
+        packages=",".join(SPARK_PACKAGES),
         verbose=False,
     )
 

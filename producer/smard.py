@@ -45,7 +45,7 @@ class PricePoint:
 
     def to_message(self, source: str = "smard") -> dict:
         """Kafka message body consumed by the Spark streaming job."""
-        now = dt.datetime.now(dt.UTC)
+        now = dt.datetime.now(dt.timezone.utc)
         return {
             "region": self.region,
             "delivery_ts": self.delivery_ts_utc.isoformat(),
@@ -133,7 +133,7 @@ def parse_chunk(payload: dict, region: str) -> list[PricePoint]:
         if price is None:
             continue  # not yet published (or a genuine market gap)
         try:
-            delivery_ts = dt.datetime.fromtimestamp(int(ts_ms) / 1000, tz=dt.UTC)
+            delivery_ts = dt.datetime.fromtimestamp(int(ts_ms) / 1000, tz=dt.timezone.utc)
             points.append(
                 PricePoint(region=region, delivery_ts_utc=delivery_ts, price_eur_mwh=float(price))
             )
