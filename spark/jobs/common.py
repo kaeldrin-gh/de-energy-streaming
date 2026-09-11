@@ -43,6 +43,11 @@ def build_spark(app_name: str) -> SparkSession:
         )
         .config(f"spark.sql.catalog.{CATALOG}.jdbc.user", env("POSTGRES_USER", "energy"))
         .config(f"spark.sql.catalog.{CATALOG}.jdbc.password", env("POSTGRES_PASSWORD", "energy"))
+        # V1 migrates the JDBC catalog schema to include view support. Without
+        # it, Iceberg's catalog initialization is view-disabled and any view
+        # operation (including the ones Spark issues during MERGE planning)
+        # fails with UnsupportedOperationException.
+        .config(f"spark.sql.catalog.{CATALOG}.jdbc.schema-version", "V1")
         .config(
             f"spark.sql.catalog.{CATALOG}.warehouse",
             env("ICEBERG_WAREHOUSE", "s3a://energy-lake/warehouse"),
