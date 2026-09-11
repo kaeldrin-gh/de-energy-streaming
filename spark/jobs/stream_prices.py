@@ -73,10 +73,15 @@ def main() -> None:
     def upsert_bronze(batch_df, batch_id: int) -> None:
         if batch_df.isEmpty():
             return
-        view = f"bronze_batch_{batch_id}"
-        batch_df.createOrReplaceTempView(view)
-        merge_bronze_from_view(spark, view)
-        spark.catalog.dropTempView(view)
+        # Inside a foreachBatch callback a regular temp view created from the
+        # batch DataFrame is not visible to spark.sql in this Spark version
+        # (the callback's session boundaries don't share the session catalog).
+        # Global temp views are application-scoped and resolve reliably.
+        name = f"bronze_batch_{batch_id}"
+        qualified = f"global_temp.{name}"
+        batch_df.createOrReplaceGlobalTempView(name)
+        merge_bronze_from_view(spark, qualified)
+        spark.catalog.dropGlobalTempView(qualified)
 
     def route_to_dlq(batch_df, batch_id: int) -> None:
         if batch_df.isEmpty():
