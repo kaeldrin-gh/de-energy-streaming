@@ -30,6 +30,7 @@ variables.
 | Infrastructure as code | Terraform provisions the lakehouse bucket against the real S3 API (LocalStack) |
 | Serving layer | PostgreSQL upserts + provisioned Grafana dashboard + Prometheus/statsd metrics |
 | Testing & CI | pytest (parsers, replay determinism, key stability), ruff, compose config + `terraform validate` in GitHub Actions |
+| Analysis, not just plumbing | `analysis/findings.md`: every number computed from the marts and re-runnable via `make bi` |
 | Operational maturity | Health-check DAG, runbook, incident-driven ADRs |
 
 ## Architecture
@@ -74,6 +75,22 @@ pipeline health, negative-price hours) plus Prometheus scrape targets. The
 Airflow grid shows the hourly `transform_silver_gold` task succeeding. The
 Spark master UI shows the long-running streaming application alongside the
 batch jobs submitted by Airflow.
+
+## What the data says
+
+![Duck curve](docs/images/findings_duck_curve.png)
+
+Fourteen weeks of real SMARD.de prices (2,328 hours, Jun–Sep 2026), computed entirely from
+this repo's own marts — every number re-runnable with `make bi`:
+
+| | |
+| --- | --- |
+| **€178 vs €38** | evening peak (18–20h) vs midday trough (11–14h) — the duck curve, priced |
+| **7.9%** | of all hours cleared below zero (185 hours, min −€45.87/MWh) |
+| **20.5% vs 3.1%** | negative-price share on weekends vs weekdays |
+| **−€0.83 vs €192** | weekend midday vs weekday evening — the cheapest window of the week is *free* |
+
+Full analysis, charts and caveats: [analysis/findings.md](analysis/findings.md).
 
 ## Quickstart
 

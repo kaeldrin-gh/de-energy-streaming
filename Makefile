@@ -1,7 +1,7 @@
 COMPOSE ?= docker compose
 TF_VARS = -var localstack_endpoint=http://localstack:4566
 
-.PHONY: help up down ps logs init infra demo live stream backfill obs test lint fmt sample clean
+.PHONY: help up down ps logs init infra demo live stream backfill obs test lint fmt sample bi charts clean
 
 help: ## show available targets
 	@echo de-energy-streaming targets:
@@ -53,3 +53,9 @@ fmt: ## ruff format
 
 sample: ## refresh data/sample/ from the live SMARD API (needs network)
 	python scripts/make_sample.py
+
+bi: ## run the findings BI queries against the serving database
+	$(COMPOSE) exec -T postgres psql -U energy -d serving < analysis/bi_queries.sql
+
+charts: ## regenerate the findings charts (needs the analysis extra: pip install -e ".[analysis]")
+	python analysis/make_charts.py
