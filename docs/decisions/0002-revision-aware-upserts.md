@@ -32,7 +32,8 @@ make every write a **revision-aware upsert**:
 - Checkpoints make Kafka offset recovery idempotent on top of that.
 
 The precedence rule (`newer fetched_at wins`) lives in one place - the MERGE
-statement - and is covered by replay-idempotency tests.
+statement - and is exercised by `tests/test_bronze_merge.py`, which replays
+revisions against a throwaway Iceberg warehouse.
 
 ## Consequences
 

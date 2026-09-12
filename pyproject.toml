@@ -23,6 +23,10 @@ analysis = [
     "matplotlib>=3.8,<4",
     "psycopg2-binary>=2.9,<3",
 ]
+# Local Spark session for tests/test_bronze_merge.py (requires a JVM).
+sparklocal = [
+    "pyspark==3.5.9",
+]
 
 [tool.setuptools]
 packages = ["producer"]
@@ -38,6 +42,15 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 # Spark containers and the backfill job run Python 3.10 (datetime.UTC is 3.11+).
 "spark/jobs/*.py" = ["UP017"]
 "producer/*.py" = ["UP017"]
+# Tests import Spark/Airflow after pytest.importorskip, so the import block is
+# intentionally split.
+"tests/test_bronze_merge.py" = ["E402", "I001"]
+"tests/test_dags.py" = ["E402", "I001"]
+
+[tool.ruff.lint.isort]
+# The repository's airflow/ directory makes ruff detect `airflow` as
+# first-party; it is the third-party package the DAGs run inside.
+known-third-party = ["airflow"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -27,9 +27,13 @@ flowchart LR
     T --> SI[("Iceberg silver + gold")]
     T -->|upsert| PG[("Postgres serving")]
     PG --> G["Grafana"]
-    A["Airflow"] -. submits .-> S
-    A -. submits .-> T
+    A["Airflow"] -. hourly transform .-> T
+    A -. daily backfill .-> B
 ```
+
+The streaming job is a long-running process (started with `make stream`);
+Airflow owns the batch side: the hourly transform, the daily backfill and the
+freshness health check.
 
 One Iceberg namespace, three layers. **Bronze** keeps one row per
 `(region, delivery_ts)` with revision-aware upserts, so replays and upstream
@@ -99,14 +103,25 @@ setting `S3_ENDPOINT`, `ICEBERG_WAREHOUSE` and credentials; no code changes.
 ## Tests
 
 ```bash
-python -m pytest -q                  # 10 unit tests, no Docker or network
+python -m pytest -q                  # fast unit tests, no Docker or network
 python -m pytest -m integration -q   # live SMARD smoke test
 ruff check . && ruff format --check .
 ```
 
-CI runs lint, tests, `docker compose config`, and Terraform validation on every
-push. Operational commands and failure modes are in
-[docs/operations.md](docs/operations.md).
+Two heavier suites run in CI rather than requiring a local install:
+
+- `tests/test_bronze_merge.py` starts a local Spark + Iceberg session and proves
+  the revision-aware MERGE is idempotent: replaying a batch converges to one
+  row per `(region, delivery_ts)`, and a stale revision never overwrites a
+  newer one. Run it locally with `pip install -e ".[sparklocal]"` on a machine
+  with a JVM.
+- `tests/test_dags.py` imports every DAG through Airflow's DagBag and checks
+  that each Spark task still points at an existing job with the expected
+  arguments, so broken DAGs fail the build before they reach the scheduler.
+
+CI runs lint, unit tests, both suites above, `docker compose config`, and
+Terraform validation on every push. Operational commands and failure modes are
+in [docs/operations.md](docs/operations.md).
 
 ## Design notes
 
