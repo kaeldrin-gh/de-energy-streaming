@@ -19,18 +19,29 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    outputs:
+      pytest: ${{ steps.record.outputs.pytest }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install requests pytest
-      - run: pytest -q
+      - name: Run tests
+        run: |
+          set -o pipefail
+          python -m pytest -q | tee pytest.txt
+      - name: Record summary
+        if: always()
+        id: record
+        run: echo "pytest=$(tail -n 1 pytest.txt 2>/dev/null || echo 'no output')" >> "$GITHUB_OUTPUT"
 
   # The revision-aware MERGE from ADR 0002 against a real local Spark + Iceberg
   # session (Hadoop catalog, temp warehouse). No Docker or cloud account needed.
   spark-merge-test:
     runs-on: ubuntu-latest
+    outputs:
+      pytest: ${{ steps.record.outputs.pytest }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -47,12 +58,21 @@ jobs:
             ~/.cache/pip
           key: spark-test-iceberg-1.8.1
       - run: pip install pyspark==3.5.9 pytest
-      - run: python -m pytest tests/test_bronze_merge.py -q
+      - name: Run MERGE suite
+        run: |
+          set -o pipefail
+          python -m pytest tests/test_bronze_merge.py -q | tee pytest.txt
+      - name: Record summary
+        if: always()
+        id: record
+        run: echo "pytest=$(tail -n 1 pytest.txt 2>/dev/null || echo 'no output')" >> "$GITHUB_OUTPUT"
 
   # Broken DAGs must fail the build before they reach the scheduler. Provider
   # versions match docker/airflow/requirements.txt via the official constraints.
   dag-tests:
     runs-on: ubuntu-latest
+    outputs:
+      pytest: ${{ steps.record.outputs.pytest }}
     env:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     steps:
@@ -71,14 +91,28 @@ jobs:
           apache-airflow-providers-postgres==6.0.0
           pytest
           --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.12.txt
-      - run: python -m pytest tests/test_dags.py -q
+      - name: Run DAG tests
+        run: |
+          set -o pipefail
+          python -m pytest tests/test_dags.py -q | tee pytest.txt
+      - name: Record summary
+        if: always()
+        id: record
+        run: echo "pytest=$(tail -n 1 pytest.txt 2>/dev/null || echo 'no output')" >> "$GITHUB_OUTPUT"
 
   # The compose file and Terraform config are code too - keep them valid.
   compose-config:
     runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.count.outputs.services }}
     steps:
       - uses: actions/checkout@v7
-      - run: docker compose config --quiet
+      - name: Validate compose file
+        run: docker compose config --quiet
+      - name: Count services
+        if: always()
+        id: count
+        run: echo "services=$(docker compose config --services 2>/dev/null | wc -l)" >> "$GITHUB_OUTPUT"
 
   terraform:
     runs-on: ubuntu-latest
@@ -91,3 +125,25 @@ jobs:
       - run: terraform fmt -check
       - run: terraform init -backend=false
       - run: terraform validate
+
+  # One consolidated table on the run page - the CI analogue of the ingest
+  # metrics summary in the Dutch project.
+  report:
+    if: always()
+    needs: [lint, test, spark-merge-test, dag-tests, compose-config, terraform]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run summary
+        run: |
+          {
+            echo "## de-energy-streaming - CI summary"
+            echo ""
+            echo "| Job | Result | Evidence |"
+            echo "| --- | --- | --- |"
+            echo "| lint | ${{ needs.lint.result }} | ruff check + ruff format |"
+            echo "| test | ${{ needs.test.result }} | ${{ needs.test.outputs.pytest || '-' }} |"
+            echo "| spark-merge-test | ${{ needs.spark-merge-test.result }} | revision-aware MERGE suite - ${{ needs.spark-merge-test.outputs.pytest || '-' }} |"
+            echo "| dag-tests | ${{ needs.dag-tests.result }} | 3 DAGs import + wiring - ${{ needs.dag-tests.outputs.pytest || '-' }} |"
+            echo "| compose-config | ${{ needs.compose-config.result }} | ${{ needs.compose-config.outputs.services || '?' }} services |"
+            echo "| terraform | ${{ needs.terraform.result }} | fmt + init -backend=false + validate |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"

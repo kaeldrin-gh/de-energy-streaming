@@ -120,8 +120,9 @@ Two heavier suites run in CI rather than requiring a local install:
   arguments, so broken DAGs fail the build before they reach the scheduler.
 
 CI runs lint, unit tests, both suites above, `docker compose config`, and
-Terraform validation on every push. Operational commands and failure modes are
-in [docs/operations.md](docs/operations.md).
+Terraform validation on every push, and renders a consolidated result table on
+the run page. Operational commands and failure modes are in
+[docs/operations.md](docs/operations.md).
 
 ## Design notes
 
