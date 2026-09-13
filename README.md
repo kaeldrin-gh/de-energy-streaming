@@ -121,8 +121,9 @@ Two heavier suites run in CI rather than requiring a local install:
 
 CI runs lint, unit tests, both suites above, `docker compose config`, and
 Terraform validation on every push, and renders a consolidated result table on
-the run page. Operational commands and failure modes are in
-[docs/operations.md](docs/operations.md).
+the run page. A daily `market-summary` workflow renders the latest published
+SMARD.de prices on its run page (`python -m producer summary`). Operational
+commands and failure modes are in [docs/operations.md](docs/operations.md).
 
 ## Design notes
 

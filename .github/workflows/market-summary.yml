@@ -1,0 +1,28 @@
+name: market-summary
+
+on:
+  schedule:
+    # Daily after the day-ahead auction for D+1 publishes (~12:00-14:00 CET).
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+
+jobs:
+  summary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install producer
+        run: pip install -e .
+
+      # SMARD needs no key, Docker or Spark: the producer client fetches the
+      # latest published hours and renders the market pulse on this run page.
+      - name: Market pulse
+        run: |
+          set -o pipefail
+          python -m producer summary | tee -a "$GITHUB_STEP_SUMMARY"

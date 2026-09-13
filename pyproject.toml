@@ -11,6 +11,8 @@ requires-python = ">=3.12"
 dependencies = [
     "requests>=2.32,<3",
     "confluent-kafka>=2.4,<3",
+    # IANA timezone data so Europe/Berlin works on Windows too (zoneinfo).
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]

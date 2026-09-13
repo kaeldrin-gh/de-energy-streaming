@@ -46,6 +46,11 @@ def build_parser() -> argparse.ArgumentParser:
     replay = sub.add_parser("replay", help="replay the bundled sample (offline, deterministic)")
     replay.add_argument("--sample", type=Path, default=None, help="path to a sample JSON file")
     replay.add_argument("--speed", type=float, default=50.0, help="messages per second")
+
+    summary = sub.add_parser(
+        "summary", help="print a Markdown market pulse from the latest SMARD.de prices"
+    )
+    summary.add_argument("--weeks", type=int, default=3, help="weekly SMARD chunks to fetch")
     return parser
 
 
@@ -62,6 +67,12 @@ def main(argv: list[str] | None = None) -> int:
         level=args.log_level.upper(),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+    if args.command == "summary":
+        from producer.summary import run as run_summary
+
+        run_summary(weeks=args.weeks)
+        return 0
 
     settings = Settings()
     sink = None
