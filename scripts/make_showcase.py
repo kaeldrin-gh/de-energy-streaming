@@ -18,7 +18,7 @@ from pathlib import Path
 from producer.config import Settings
 from producer.news import classify, default_feeds, fetch_feeds
 from producer.smard import SmardClient
-from producer.summary import render_summary
+from producer.summary import render_news, render_summary
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -69,6 +69,8 @@ def markdown_to_html(markdown: str) -> str:
             continue
         if stripped.startswith("## "):
             output.append(f"<h2>{inline_html(stripped[3:])}</h2>")
+        elif stripped.startswith("### "):
+            output.append(f"<h3>{inline_html(stripped[4:])}</h3>")
         else:
             output.append(f"<p>{inline_html(stripped)}</p>")
     if in_table:
@@ -77,23 +79,28 @@ def markdown_to_html(markdown: str) -> str:
 
 
 def live_pulse() -> str:
-    """The market pulse as HTML; a short note when the sources are unavailable."""
+    """The price pulse as HTML; a short note when SMARD is unavailable."""
     try:
         settings = Settings()
         client = SmardClient(settings.smard_base_url, settings.smard_filter, settings.smard_region)
         points = client.fetch_latest(weeks=3)
-        news = None
-        try:
-            headlines = fetch_feeds(default_feeds())
-            news = classify(headlines) if headlines else None
-        except Exception:  # noqa: BLE001 - the page must render without news
-            news = None
-        return markdown_to_html(render_summary(points, news=news))
+        return markdown_to_html(render_summary(points, news=None))
     except Exception:  # noqa: BLE001 - the page must render without the pulse
         return (
             "<p>Market pulse unavailable at build time. "
             f"See the workflow runs on <a href='{REPO_URL}/actions'>GitHub Actions</a>.</p>"
         )
+
+
+def live_news() -> str:
+    """The classified headlines block as HTML; a note when unavailable."""
+    try:
+        headlines = fetch_feeds(default_feeds())
+        if not headlines:
+            return "<p>No headlines available at build time.</p>"
+        return markdown_to_html(render_news(classify(headlines), heading=None))
+    except Exception:  # noqa: BLE001 - the page must render without the news
+        return "<p>Headlines unavailable at build time.</p>"
 
 
 def build_page(out_dir: Path) -> Path:
@@ -146,6 +153,11 @@ Rebuilt daily; generated {generated}.</p>
 
 <h2>Market pulse (live)</h2>
 {live_pulse()}
+
+<h2>News context (live)</h2>
+<p class="sub">Public energy-news headlines classified into topics by
+<a href="https://classifier.dev">classifier.dev</a>; unrelated headlines are filtered out.</p>
+{live_news()}
 
 <h2>What the data says</h2>
 {figures(CHARTS)}

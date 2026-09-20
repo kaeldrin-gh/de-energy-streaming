@@ -53,7 +53,7 @@ def _local(when: dt.datetime) -> str:
     return when.astimezone(LOCAL_TZ).strftime("%a %d %b %H:%M")
 
 
-def _news_section(news: list[ClassifiedHeadline]) -> list[str]:
+def _news_block(news: list[ClassifiedHeadline]) -> list[str]:
     """Markdown rows for the latest energy topics plus a filtered-out note."""
     counts: dict[str, int] = {}
     for item in news:
@@ -61,7 +61,6 @@ def _news_section(news: list[ClassifiedHeadline]) -> list[str]:
             counts[item.category] = counts.get(item.category, 0) + 1
     filtered = len(news) - sum(counts.values())
     lines = [
-        "",
         f"| Energy topic (latest {len(news)} headlines) | Headlines |",
         "| --- | ---: |",
     ]
@@ -77,6 +76,12 @@ def _news_section(news: list[ClassifiedHeadline]) -> list[str]:
         f"_{filtered} of {len(news)} headlines were general news and filtered out._",
     ]
     return lines
+
+
+def render_news(news: list[ClassifiedHeadline], heading: str | None = "### News context") -> str:
+    """Markdown news block for run pages and reports (heading optional)."""
+    lines = [heading, ""] if heading else []
+    return "\n".join(lines + _news_block(news))
 
 
 def render_summary(
@@ -140,7 +145,7 @@ def render_summary(
         f"| Weekends | {_fmt(_mean(weekend))} | {len(weekend)} |",
     ]
     if news:
-        lines += _news_section(news)
+        lines += ["", "### News context", ""] + _news_block(news)
     lines += [
         "",
         "Full analysis and charts: `analysis/findings.md`, `make bi`, `make charts`.",
