@@ -49,12 +49,13 @@ def test_render_summary_includes_news_topics():
     ]
     md = render_summary([point(1, 50.0)], now=NOW, news=news)
 
-    assert "latest 3 headlines" in md
+    assert "| Energy topic (latest 3 headlines) | Headlines |" in md
     assert "| policy | 2 |" in md
-    assert "| none / unclassified | 1 |" in md
+    assert "1 of 3 headlines were general news and filtered out." in md
+    assert "none / unclassified" not in md
 
 
 def test_render_summary_without_news_has_no_news_table():
     md = render_summary([point(1, 50.0)], now=NOW)
 
-    assert "News topic" not in md
+    assert "Energy topic" not in md

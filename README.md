@@ -80,12 +80,15 @@ Full analysis, charts and caveats: [analysis/findings.md](analysis/findings.md).
 ## News context (optional)
 
 `make news` fetches public energy-news headlines (pv-magazine, Clean Energy
-Wire, Tagesschau Wirtschaft) and classifies each one through
+Wire, Solarserver) and classifies each one through
 [classifier.dev](https://classifier.dev) - a keyless, free HTTP classifier that
-returns a calibrated confidence per label - into `weather / grid incident /
-policy / market design / technology`. A `none of these` answer is stored as a
-NULL category, so unrelated news never pollutes the analytics. Headlines land
-in `lake.energy.news_events` and can be joined to price days:
+returns a calibrated confidence per label - into `grid and infrastructure /
+policy and regulation / power prices and markets / gas / renewables / batteries
+and storage / hydrogen / companies and projects / weather`. Headlines whose
+topic is `none of these` are stored with a NULL category (unrelated news never
+pollutes the analytics), and the reports show the energy topics plus how many
+headlines were general news and filtered out. Headlines land in
+`lake.energy.news_events` and can be joined to price days:
 
 ```sql
 SELECT date_trunc('day', n.published_ts) AS day, n.category, count(*)

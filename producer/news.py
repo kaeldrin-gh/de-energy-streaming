@@ -27,25 +27,28 @@ log = logging.getLogger(__name__)
 DEFAULT_FEEDS = [
     "https://www.pv-magazine.de/feed/",
     "https://www.cleanenergywire.org/rss.xml",
-    "https://www.tagesschau.de/wirtschaft/index~rss2.xml",
+    "https://www.solarserver.de/feed/",
 ]
 
 CLASSIFIER_LABELS = [
+    "grid and infrastructure",
+    "policy and regulation",
+    "power prices and markets",
+    "gas",
+    "renewables",
+    "batteries and storage",
+    "hydrogen",
+    "companies and projects",
     "weather",
-    "grid incident",
-    "policy",
-    "market design",
-    "technology",
     "none of these",
 ]
 
 CLASSIFIER_INSTRUCTIONS = (
-    "Classify German and European energy market news. weather = storms, heat, "
-    "drought, wind or solar conditions that affect power. grid incident = "
-    "outages, faults, redispatch or grid emergencies. policy = laws, regulation, "
-    "subsidies, government decisions. market design = auction rules, market "
-    "coupling, prices, trading. technology = batteries, hydrogen, plants, "
-    "projects. none of these = not about the energy market."
+    "Classify German, Dutch and European energy news. If a headline touches any "
+    "part of the energy system - generation, grids, power markets, prices, "
+    "policy, storage, hydrogen, gas, utilities or projects - pick the closest "
+    "topic. Use 'none of these' only for clearly unrelated news (general "
+    "finance, macro, housing, labour, sport, culture)."
 )
 
 USER_AGENT = "de-energy-streaming/0.1 (+https://github.com/kaeldrin-gh/de-energy-streaming)"

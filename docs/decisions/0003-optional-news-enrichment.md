@@ -21,11 +21,12 @@ Constraints (inherited from ADR 0001):
 Add an optional **news enrichment** as a separate daily batch job
 (`spark/jobs/news_ingest.py`, Airflow DAG `energy_news_ingest`):
 
-- fetch public RSS feeds (pv-magazine, Clean Energy Wire, Tagesschau
-  Wirtschaft) with stdlib XML parsing - no new dependency;
+- fetch public RSS feeds (pv-magazine, Clean Energy Wire, Solarserver) with
+  stdlib XML parsing - no new dependency;
 - classify each headline through classifier.dev, a keyless HTTP API with a free
-  tier, into `weather / grid incident / policy / market design / technology /
-  none of these`;
+  tier, into `grid and infrastructure / policy and regulation / power prices and
+  markets / gas / renewables / batteries and storage / hydrogen / companies and
+  projects / weather / none of these`;
 - store one row per `(source, link)` in `lake.energy.news_events`, using the
   same revision-aware MERGE rule as prices: newer `fetched_at` wins, so a later
   classification updates the category instead of duplicating the row; a
@@ -48,3 +49,6 @@ Failure semantics:
 - Classification quality is the API's, not ours - the stored `model` and
   `confidence` columns keep the provenance, and unrelated news is stored with a
   NULL category instead of polluting the analytics.
+- Feed selection is part of the design: energy-specific sources keep the
+  filtered share low (about 17% of headlines on the current feed set) while a
+  broad economy feed would make "none of these" the majority.

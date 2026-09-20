@@ -54,19 +54,27 @@ def _local(when: dt.datetime) -> str:
 
 
 def _news_section(news: list[ClassifiedHeadline]) -> list[str]:
-    """Markdown rows for the latest headlines per topic."""
+    """Markdown rows for the latest energy topics plus a filtered-out note."""
     counts: dict[str, int] = {}
     for item in news:
-        topic = item.category or "none / unclassified"
-        counts[topic] = counts.get(topic, 0) + 1
+        if item.category:
+            counts[item.category] = counts.get(item.category, 0) + 1
+    filtered = len(news) - sum(counts.values())
     lines = [
         "",
-        f"| News topic (latest {len(news)} headlines) | Headlines |",
+        f"| Energy topic (latest {len(news)} headlines) | Headlines |",
         "| --- | ---: |",
     ]
+    if counts:
+        lines += [
+            f"| {topic} | {count} |"
+            for topic, count in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))
+        ]
+    else:
+        lines.append("| (none found) | 0 |")
     lines += [
-        f"| {topic} | {count} |"
-        for topic, count in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))
+        "",
+        f"_{filtered} of {len(news)} headlines were general news and filtered out._",
     ]
     return lines
 
