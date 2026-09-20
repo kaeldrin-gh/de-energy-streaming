@@ -51,6 +51,12 @@ def build_parser() -> argparse.ArgumentParser:
         "summary", help="print a Markdown market pulse from the latest SMARD.de prices"
     )
     summary.add_argument("--weeks", type=int, default=3, help="weekly SMARD chunks to fetch")
+
+    news = sub.add_parser(
+        "news", help="fetch energy-news feeds and classify headlines (prints JSON lines)"
+    )
+    news.add_argument("--feeds", default=None, help="comma-separated feed URLs (default: built-in)")
+    news.add_argument("--limit", type=int, default=0, help="max headlines to print (0 = all)")
     return parser
 
 
@@ -72,6 +78,15 @@ def main(argv: list[str] | None = None) -> int:
         from producer.summary import run as run_summary
 
         run_summary(weeks=args.weeks)
+        return 0
+
+    if args.command == "news":
+        from producer.news import run_news
+
+        feeds = (
+            [url.strip() for url in args.feeds.split(",") if url.strip()] if args.feeds else None
+        )
+        run_news(feeds=feeds, limit=args.limit)
         return 0
 
     settings = Settings()

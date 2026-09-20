@@ -1,7 +1,7 @@
 COMPOSE ?= docker compose
 TF_VARS = -var localstack_endpoint=http://localstack:4566
 
-.PHONY: help up down ps logs init infra demo live stream backfill obs test lint fmt sample bi charts clean
+.PHONY: help up down ps logs init infra demo live stream backfill news obs test lint fmt sample bi charts clean
 
 help: ## show available targets
 	@echo de-energy-streaming targets:
@@ -38,6 +38,9 @@ stream: ## run the Kafka -> Iceberg streaming job in the foreground
 
 backfill: ## revision-aware backfill from the live SMARD API (default: 4 weeks)
 	$(COMPOSE) run --rm spark-submit --master spark://spark-master:7077 /opt/jobs/backfill_prices.py --weeks 4
+
+news: ## fetch energy-news headlines and classify them into Iceberg (optional enrichment)
+	$(COMPOSE) run --rm spark-submit --master spark://spark-master:7077 /opt/jobs/news_ingest.py
 
 obs: ## start Prometheus + Grafana (observability profile)
 	$(COMPOSE) --profile observability up -d

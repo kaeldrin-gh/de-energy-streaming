@@ -16,6 +16,7 @@ the stack is healthy.
 | Offline demo replay | `make demo` |
 | Streaming job | `make stream` (foreground) |
 | Batch backfill | `make backfill` |
+| News enrichment (optional) | `make news` |
 | Observability stack | `make obs` |
 
 ## Inspecting the platform
@@ -81,6 +82,7 @@ application plus the batch jobs submitted by Airflow):
 | Health DAG failing | `serving.pipeline_health` | Freshness SLA is 3 h; streaming or hourly transform stopped |
 | Port already in use | `netstat -ano \| findstr 8088` (Windows) | Another Postgres/Airflow instance running; stop it or remap ports in `docker-compose.yml` |
 | Docker Desktop memory issues | Settings → Resources | Give Docker ≥ 8 GB RAM; Spark worker is capped at 2 GB |
+| News job stores NULL categories | `make news` output | classifier.dev unreachable or rate-limited; headlines are kept and the next run reclassifies them (ADR 0003) |
 
 ## Data semantics worth remembering
 

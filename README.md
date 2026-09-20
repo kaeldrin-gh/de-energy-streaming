@@ -32,8 +32,8 @@ flowchart LR
 ```
 
 The streaming job is a long-running process (started with `make stream`);
-Airflow owns the batch side: the hourly transform, the daily backfill and the
-freshness health check.
+Airflow owns the batch side: the hourly transform, the daily backfill, the
+freshness health check, and an optional daily news ingest (ADR 0003).
 
 One Iceberg namespace, three layers. **Bronze** keeps one row per
 `(region, delivery_ts)` with revision-aware upserts, so replays and upstream
@@ -44,8 +44,10 @@ upserted into the Postgres serving schema.
 The jobs: `producer/` polls SMARD and publishes one message per delivery hour;
 `spark/jobs/stream_prices.py` writes bronze and routes malformed records to a
 dead-letter topic; `backfill_prices.py` loads history through the same MERGE;
-`transform_silver.py` rebuilds silver and gold and refreshes serving; the
-`energy_healthcheck` DAG verifies serving freshness every 30 minutes.
+`transform_silver.py` rebuilds silver and gold and refreshes serving;
+`news_ingest.py` classifies public energy-news headlines into Iceberg as an
+optional qualitative layer (ADR 0003); the `energy_healthcheck` DAG verifies
+serving freshness every 30 minutes.
 
 ## Screenshots
 
@@ -72,6 +74,24 @@ from the marts and re-runnable with `make bi`:
 
 Full analysis, charts and caveats: [analysis/findings.md](analysis/findings.md).
 
+## News context (optional)
+
+`make news` fetches public energy-news headlines (pv-magazine, Clean Energy
+Wire, Tagesschau Wirtschaft) and classifies each one through a keyless HTTP API
+into `weather / grid incident / policy / market design / technology`. Headlines
+land in `lake.energy.news_events` and can be joined to price days:
+
+```sql
+SELECT date_trunc('day', n.published_ts) AS day, n.category, count(*)
+FROM lake.energy.news_events n
+WHERE n.category IS NOT NULL
+GROUP BY 1, 2
+ORDER BY 1 DESC;
+```
+
+The job is optional and fails soft (ADR 0003): if the classifier is down,
+headlines are stored with a NULL category and the next run reclassifies them.
+
 ## Quickstart
 
 Requires Docker Desktop (free) with about 8 GB of RAM; on Windows, enable WSL2.
@@ -86,6 +106,7 @@ make stream    # run the Kafka to Iceberg streaming job (Ctrl+C to stop)
 
 make live      # or poll SMARD every 60 seconds (no API key needed)
 make backfill  # or load the last few weeks of history
+make news      # or classify public energy-news headlines (optional, ADR 0003)
 make obs       # add Grafana and Prometheus
 ```
 
@@ -129,17 +150,18 @@ commands and failure modes are in [docs/operations.md](docs/operations.md).
 
 - [ADR 0001: local-first, zero-cost stack](docs/decisions/0001-local-first-zero-cost.md)
 - [ADR 0002: revision-aware upserts](docs/decisions/0002-revision-aware-upserts.md)
+- [ADR 0003: optional news enrichment](docs/decisions/0003-optional-news-enrichment.md)
 
 ## Layout
 
 ```
-producer/       SMARD client, Kafka sink, CLIs
-spark/jobs/     streaming, backfill and transform jobs
-airflow/dags/   batch pipeline and health check
+producer/       SMARD client, Kafka sink, news feeds, CLIs
+spark/jobs/     streaming, backfill, transform and news jobs
+airflow/dags/   batch pipelines, news ingest and health check
 analysis/       BI queries, chart generation, findings
 terraform/      lakehouse bucket (LocalStack or AWS)
 docker/         images, Postgres init, Grafana and Prometheus provisioning
-tests/          parser, replay and message contract tests
+tests/          parsers, replay/contract, MERGE idempotency, DAGs, news
 ```
 
 ## Roadmap

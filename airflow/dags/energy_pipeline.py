@@ -2,8 +2,9 @@
 
 * ``energy_batch_pipeline``  - hourly: transform bronze -> silver -> gold, refresh serving tables.
 * ``energy_history_backfill`` - daily: revision-aware backfill of recent SMARD weeks.
+* ``energy_news_ingest``     - daily: news headlines + topic classification into Iceberg (ADR 0003).
 
-Both tasks submit the same jobs that can be run manually with spark-submit,
+All tasks submit the same jobs that can be run manually with spark-submit,
 so Airflow owns scheduling/retries, not business logic.
 """
 
@@ -77,5 +78,20 @@ def energy_history_backfill():
     spark_task("backfill_recent_weeks", f"{JOBS_DIR}/backfill_prices.py", ["--weeks", "2"])
 
 
+@dag(
+    dag_id="energy_news_ingest",
+    description="Daily energy-news headlines enriched with a topic category.",
+    schedule="0 6 * * *",
+    start_date=pendulum.datetime(2026, 9, 1, tz="Europe/Berlin"),
+    catchup=False,
+    max_active_runs=1,
+    tags=["energy", "news"],
+    default_args=DEFAULT_ARGS,
+)
+def energy_news_ingest():
+    spark_task("ingest_news", f"{JOBS_DIR}/news_ingest.py")
+
+
 energy_batch_pipeline()
 energy_history_backfill()
+energy_news_ingest()

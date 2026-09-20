@@ -21,6 +21,7 @@ NAMESPACE = f"{CATALOG}.energy"
 BRONZE = f"{NAMESPACE}.bronze_prices"
 SILVER = f"{NAMESPACE}.silver_prices"
 GOLD_DAILY = f"{NAMESPACE}.gold_daily"
+NEWS = f"{NAMESPACE}.news_events"
 
 
 def env(name: str, default: str | None = None) -> str:
@@ -125,6 +126,23 @@ def ensure_tables(spark: SparkSession) -> None:
         """
     )
 
+    spark.sql(
+        f"""
+        CREATE TABLE IF NOT EXISTS {NEWS} (
+            source       string,
+            link         string,
+            title        string,
+            published_ts timestamp,
+            category     string,
+            confidence   double,
+            model        string,
+            fetched_at   timestamp
+        ) USING iceberg
+        PARTITIONED BY (days(published_ts))
+        TBLPROPERTIES ('format-version' = '2')
+        """
+    )
+
 
 def merge_bronze_from_view(spark: SparkSession, view: str) -> None:
     """Revision-aware upsert: newer ``fetched_at`` wins, one row per natural key.
@@ -153,5 +171,40 @@ def merge_bronze_from_view(spark: SparkSession, view: str) -> None:
         WHEN NOT MATCHED THEN INSERT
             (region, delivery_ts, price_eur_mwh, source, fetched_at)
             VALUES (s.region, s.delivery_ts, s.price_eur_mwh, s.source, s.fetched_at)
+        """
+    )
+
+
+def merge_news_from_view(spark: SparkSession, view: str) -> None:
+    """News upsert: one row per (source, link), newer ``fetched_at`` wins.
+
+    Reclassification on a later run updates the category; a transient classifier
+    outage leaves it NULL until then (ADR 0003).
+    """
+    spark.sql(
+        f"""
+        MERGE INTO {NEWS} AS t
+        USING (
+            SELECT source, link, title, published_ts, category, confidence, model, fetched_at
+            FROM (
+                SELECT *,
+                       row_number() OVER (
+                           PARTITION BY source, link ORDER BY fetched_at DESC
+                       ) AS rn
+                FROM {view}
+            ) WHERE rn = 1
+        ) AS s
+        ON t.source = s.source AND t.link = s.link
+        WHEN MATCHED AND s.fetched_at > t.fetched_at THEN UPDATE SET
+            title        = s.title,
+            published_ts = s.published_ts,
+            category     = s.category,
+            confidence   = s.confidence,
+            model        = s.model,
+            fetched_at   = s.fetched_at
+        WHEN NOT MATCHED THEN INSERT
+            (source, link, title, published_ts, category, confidence, model, fetched_at)
+            VALUES (s.source, s.link, s.title, s.published_ts, s.category, s.confidence,
+                    s.model, s.fetched_at)
         """
     )
