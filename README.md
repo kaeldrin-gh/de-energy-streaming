@@ -17,8 +17,8 @@ by changing environment variables.
 Batch counterpart: [nl-energy-warehouse](https://github.com/kaeldrin-gh/nl-energy-warehouse)
 covers dbt-based analytics engineering on Dutch power prices.
 Managed-platform counterpart: [databricks-energy-quality](https://github.com/kaeldrin-gh/databricks-energy-quality)
-covers the same domain on Databricks Free Edition (Unity Catalog, Delta,
-Lakeflow pipelines, workflows).
+covers the same domain on Databricks (Unity Catalog, Delta, Lakeflow pipelines,
+Workflows).
 
 ## Architecture
 
