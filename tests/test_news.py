@@ -68,7 +68,7 @@ def test_classify_maps_labels_and_treats_none_as_unclassified(monkeypatch):
         assert body["labels"][-1] == "none of these"
         return {
             "results": [
-                {"label": "grid incident", "confidence": 0.95, "model": "m1"},
+                {"label": "grid and infrastructure", "confidence": 0.95, "model": "m1"},
                 {"label": "none of these", "confidence": 0.8, "model": "m1"},
             ]
         }
@@ -80,7 +80,7 @@ def test_classify_maps_labels_and_treats_none_as_unclassified(monkeypatch):
     ]
     classified = news.classify(headlines)
 
-    assert classified[0].category == "grid incident"
+    assert classified[0].category == "grid and infrastructure"
     assert classified[0].confidence == 0.95
     assert classified[1].category is None
     assert classified[1].confidence is None
