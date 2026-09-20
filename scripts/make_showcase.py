@@ -35,6 +35,8 @@ SCREENSHOTS = [
 ]
 
 REPO_URL = "https://github.com/kaeldrin-gh/de-energy-streaming"
+NL_REPO_URL = "https://github.com/kaeldrin-gh/nl-energy-warehouse"
+DATABRICKS_REPO_URL = "https://github.com/kaeldrin-gh/databricks-energy-quality"
 
 
 def inline_html(text: str) -> str:
@@ -150,6 +152,10 @@ Rebuilt daily; generated {generated}.</p>
 <a href="{REPO_URL}#readme">README</a> ·
 <a href="{REPO_URL}/blob/main/docs/operations.md">Operations runbook</a> ·
 <a href="{REPO_URL}/blob/main/analysis/findings.md">Findings</a></p>
+<p class="sub">Part of a three-project portfolio:
+<a href="{REPO_URL}">de-energy-streaming</a> ·
+<a href="{NL_REPO_URL}">nl-energy-warehouse</a> ·
+<a href="{DATABRICKS_REPO_URL}">databricks-energy-quality</a>.</p>
 
 <h2>Market pulse (live)</h2>
 {live_pulse()}
