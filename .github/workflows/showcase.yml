@@ -1,0 +1,53 @@
+name: showcase
+
+on:
+  push:
+    branches: [main, master]
+  schedule:
+    # Daily at 13:30 UTC, after the market pulse has freshened.
+    - cron: "30 13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install producer
+        run: pip install -e .
+
+      # Live market pulse + findings charts + screenshots. The pulse is
+      # best-effort: a source outage leaves a note, never a failed deploy.
+      - name: Build the showcase page
+        run: python scripts/make_showcase.py --out site
+
+      - name: Upload pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

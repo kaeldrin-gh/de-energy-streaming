@@ -35,6 +35,7 @@ warehouse/
 exports/
 data/replay/
 localstack/
+site/
 
 # Editors / OS
 .idea/

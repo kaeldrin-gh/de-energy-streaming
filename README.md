@@ -2,6 +2,9 @@
 
 [![ci](https://github.com/kaeldrin-gh/de-energy-streaming/actions/workflows/ci.yml/badge.svg)](https://github.com/kaeldrin-gh/de-energy-streaming/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![showcase](https://github.com/kaeldrin-gh/de-energy-streaming/actions/workflows/showcase.yml/badge.svg)](https://github.com/kaeldrin-gh/de-energy-streaming/actions/workflows/showcase.yml)
+
+**[Live showcase](https://kaeldrin-gh.github.io/de-energy-streaming/)** — market pulse, findings charts and screenshots, rebuilt daily
 
 A streaming data platform for German day-ahead electricity prices. Market data
 from SMARD.de (Bundesnetzagentur) flows through Kafka into Spark Structured
