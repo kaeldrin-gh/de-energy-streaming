@@ -2,6 +2,7 @@
 
 import datetime as dt
 
+from producer.news import ClassifiedHeadline, Headline
 from producer.smard import PricePoint
 from producer.summary import render_summary
 
@@ -38,3 +39,22 @@ def test_render_summary_empty_input():
     md = render_summary([], now=NOW)
 
     assert "no published hours" in md.lower()
+
+
+def test_render_summary_includes_news_topics():
+    news = [
+        ClassifiedHeadline(Headline("s", "https://x/1", "t1", None), "policy", 0.9, "m"),
+        ClassifiedHeadline(Headline("s", "https://x/2", "t2", None), "policy", 0.8, "m"),
+        ClassifiedHeadline(Headline("s", "https://x/3", "t3", None), None, None, "m"),
+    ]
+    md = render_summary([point(1, 50.0)], now=NOW, news=news)
+
+    assert "latest 3 headlines" in md
+    assert "| policy | 2 |" in md
+    assert "| none / unclassified | 1 |" in md
+
+
+def test_render_summary_without_news_has_no_news_table():
+    md = render_summary([point(1, 50.0)], now=NOW)
+
+    assert "News topic" not in md

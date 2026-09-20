@@ -51,6 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
         "summary", help="print a Markdown market pulse from the latest SMARD.de prices"
     )
     summary.add_argument("--weeks", type=int, default=3, help="weekly SMARD chunks to fetch")
+    summary.add_argument("--no-news", action="store_true", help="skip the news context section")
 
     news = sub.add_parser(
         "news", help="fetch energy-news feeds and classify headlines (prints JSON lines)"
@@ -77,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "summary":
         from producer.summary import run as run_summary
 
-        run_summary(weeks=args.weeks)
+        run_summary(weeks=args.weeks, with_news=not args.no_news)
         return 0
 
     if args.command == "news":

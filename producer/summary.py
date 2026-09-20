@@ -13,7 +13,10 @@ import logging
 from zoneinfo import ZoneInfo
 
 from producer.config import Settings
+from producer.news import ClassifiedHeadline, classify, default_feeds, fetch_feeds
 from producer.smard import PricePoint, SmardClient
+
+log = logging.getLogger(__name__)
 
 LOCAL_TZ = ZoneInfo("Europe/Berlin")
 UTC = dt.timezone.utc
@@ -50,7 +53,29 @@ def _local(when: dt.datetime) -> str:
     return when.astimezone(LOCAL_TZ).strftime("%a %d %b %H:%M")
 
 
-def render_summary(points: list[PricePoint], now: dt.datetime | None = None) -> str:
+def _news_section(news: list[ClassifiedHeadline]) -> list[str]:
+    """Markdown rows for the latest headlines per topic."""
+    counts: dict[str, int] = {}
+    for item in news:
+        topic = item.category or "none / unclassified"
+        counts[topic] = counts.get(topic, 0) + 1
+    lines = [
+        "",
+        f"| News topic (latest {len(news)} headlines) | Headlines |",
+        "| --- | ---: |",
+    ]
+    lines += [
+        f"| {topic} | {count} |"
+        for topic, count in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))
+    ]
+    return lines
+
+
+def render_summary(
+    points: list[PricePoint],
+    now: dt.datetime | None = None,
+    news: list[ClassifiedHeadline] | None = None,
+) -> str:
     """Render the market pulse as Markdown for GITHUB_STEP_SUMMARY."""
     now = now or dt.datetime.now(UTC)
     published = sorted(
@@ -105,25 +130,41 @@ def render_summary(points: list[PricePoint], now: dt.datetime | None = None) -> 
         "| --- | ---: | ---: |",
         f"| Weekdays | {_fmt(_mean(weekday))} | {len(weekday)} |",
         f"| Weekends | {_fmt(_mean(weekend))} | {len(weekend)} |",
+    ]
+    if news:
+        lines += _news_section(news)
+    lines += [
         "",
         "Full analysis and charts: `analysis/findings.md`, `make bi`, `make charts`.",
     ]
     return "\n".join(lines)
 
 
-def run(weeks: int = 3) -> None:
+def _fetch_news() -> list[ClassifiedHeadline] | None:
+    """Latest headlines with topics; the price pulse must render regardless."""
+    try:
+        headlines = fetch_feeds(default_feeds())
+        return classify(headlines) if headlines else None
+    except Exception as error:  # noqa: BLE001 - news must never break the pulse
+        log.warning("news context unavailable: %s", error)
+        return None
+
+
+def run(weeks: int = 3, with_news: bool = True) -> None:
     settings = Settings()
     client = SmardClient(settings.smard_base_url, settings.smard_filter, settings.smard_region)
     points = client.fetch_latest(weeks=weeks)
-    print(render_summary(points))
+    news = _fetch_news() if with_news else None
+    print(render_summary(points, news=news))
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--weeks", type=int, default=3, help="weekly SMARD chunks to fetch")
+    parser.add_argument("--no-news", action="store_true", help="skip the news context section")
     args = parser.parse_args(argv)
     logging.basicConfig(level="INFO", format="%(asctime)s %(levelname)s %(message)s")
-    run(weeks=args.weeks)
+    run(weeks=args.weeks, with_news=not args.no_news)
     return 0
 
 

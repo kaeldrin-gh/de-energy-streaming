@@ -95,7 +95,9 @@ ORDER BY 1 DESC;
 The job is optional and fails soft (ADR 0003): if the classifier is down,
 headlines are stored with a NULL category and the next run reclassifies them.
 The endpoint can be overridden with `CLASSIFIER_URL` and the feeds with
-`NEWS_FEEDS` (see `.env.example`); there is no account, key, or cost.
+`NEWS_FEEDS` (see `.env.example`); there is no account, key, or cost. The daily
+market pulse on its run page also lists the latest headlines per topic
+(`--no-news` for a pure-price pulse).
 
 ## Quickstart
 
@@ -148,8 +150,9 @@ Two heavier suites run in CI rather than requiring a local install:
 CI runs lint, unit tests, both suites above, `docker compose config`, and
 Terraform validation on every push, and renders a consolidated result table on
 the run page. A daily `market-summary` workflow renders the latest published
-SMARD.de prices on its run page (`python -m producer summary`). Operational
-commands and failure modes are in [docs/operations.md](docs/operations.md).
+SMARD.de prices and the classified news headlines on its run page
+(`python -m producer summary`). Operational commands and failure modes are in
+[docs/operations.md](docs/operations.md).
 
 ## Design notes
 
