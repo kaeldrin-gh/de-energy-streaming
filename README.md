@@ -160,7 +160,9 @@ CI runs lint, unit tests, both suites above, `docker compose config`, and
 Terraform validation on every push, and renders a consolidated result table on
 the run page. A daily `market-summary` workflow renders the latest published
 SMARD.de prices and the classified news headlines on its run page
-(`python -m producer summary`). Operational commands and failure modes are in
+(`python -m producer summary`); if that run fails it opens one GitHub issue
+(deduplicated while an issue is open), so an outage does not pass silently.
+Operational commands and failure modes are in
 [docs/operations.md](docs/operations.md).
 
 ## Design notes
@@ -179,6 +181,7 @@ airflow/dags/   batch pipelines, news ingest and health check
 analysis/       BI queries, chart generation, findings
 terraform/      lakehouse bucket (LocalStack or AWS)
 docker/         images, Postgres init, Grafana and Prometheus provisioning
+docs/           ADRs, the operations runbook and the event-driven patterns page
 tests/          parsers, replay/contract, MERGE idempotency, DAGs, news
 ```
 
@@ -186,7 +189,6 @@ tests/          parsers, replay/contract, MERGE idempotency, DAGs, news
 
 - DWD weather join to attribute negative prices to wind and solar output
 - Iceberg compaction and snapshot expiry job
-- Alert routing for health-check failures
 
 ## License
 
