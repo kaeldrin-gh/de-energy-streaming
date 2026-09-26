@@ -1,7 +1,8 @@
 # Operations runbook
 
 Practical commands for a running stack. Assumes `make up` has been executed and
-the stack is healthy.
+the stack is healthy. For how the streaming path handles retries, duplicates,
+ordering and the DLQ, see [event-driven-patterns.md](event-driven-patterns.md).
 
 ## Day-to-day
 
