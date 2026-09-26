@@ -85,6 +85,20 @@ application plus the batch jobs submitted by Airflow):
 | Docker Desktop memory issues | Settings → Resources | Give Docker ≥ 8 GB RAM; Spark worker is capped at 2 GB |
 | News job stores NULL categories | `make news` output | classifier.dev unreachable or rate-limited; headlines are kept and the next run reclassifies them (ADR 0003) |
 
+## Alerting
+
+The pipeline is built so alerts can be wired in without touching code:
+
+- **Airflow** fails `energy_healthcheck` when the serving layer is staler than
+  3 hours. To send mail, add `email_on_failure: True` and an `email` list to the
+  DAG's `default_args` and point Airflow at an SMTP server
+  (`AIRFLOW__SMTP__SMTP_HOST`, `AIRFLOW__SMTP__SMTP_MAIL_FROM`, ...); a Slack
+  provider hooks in the same way. No credentials are committed here.
+- **GitHub Actions** opens one issue when the scheduled `market-summary` run
+  fails, and skips creating another while an issue is still open.
+- **Grafana** plots `serving.pipeline_health`, so a stale pipeline is visible on
+  the dashboard before any alert fires.
+
 ## Data semantics worth remembering
 
 - **`null` prices in SMARD responses are normal** - they are future hours of the

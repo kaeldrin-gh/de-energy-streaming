@@ -6,6 +6,10 @@ on:
     - cron: "0 13 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   summary:
     runs-on: ubuntu-latest
@@ -26,3 +30,23 @@ jobs:
         run: |
           set -o pipefail
           python -m producer summary | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Alerting: one open issue per incident; a still-open issue suppresses
+      # duplicates so a flapping source cannot spam the tracker.
+      - name: Open an issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create summary-failure --color B60205 \
+            --description "A scheduled market-summary run failed" --force || true
+          open_count=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+            --label summary-failure --state open --json number --jq 'length')
+          if [ "$open_count" -gt 0 ]; then
+            echo "an open summary-failure issue exists; not creating another"
+            exit 0
+          fi
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --label summary-failure \
+            --title "Scheduled market summary failed ($(date -u +%Y-%m-%d))" \
+            --body "The scheduled market-summary run failed. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID - first checks are in docs/operations.md."
