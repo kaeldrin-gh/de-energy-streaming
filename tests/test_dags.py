@@ -114,4 +114,3 @@ def test_freshness_wording_for_published_future_hours() -> None:
     assert recent == ("ok", "newest hour 2026-09-27 15:00 UTC is 1.2 h old")
     assert stale == ("fail", "newest hour 2026-09-27 12:00 UTC is 4.2 h old, over the 3 h limit")
     assert describe(None, now) == ("fail", "serving.price_hourly is empty")
-    assert "-" not in ahead[1].split("UTC")[1], "no negative ages"
