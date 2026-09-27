@@ -48,6 +48,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 # intentionally split.
 "tests/test_bronze_merge.py" = ["E402", "I001"]
 "tests/test_table_maintenance.py" = ["E402", "I001"]
+"tests/test_catalog_recovery.py" = ["E402", "I001"]
 "tests/test_dags.py" = ["E402", "I001"]
 
 [tool.ruff.lint.isort]

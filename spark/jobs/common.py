@@ -76,9 +76,51 @@ def build_spark(app_name: str) -> SparkSession:
     return spark
 
 
+def drop_tables_without_storage(spark: SparkSession) -> list[str]:
+    """Forget catalog entries whose table directory no longer exists in storage.
+
+    The catalog (Postgres) and the table files (LocalStack S3) live in separate
+    volumes. If storage is wiped but the catalog survives, every job fails on
+    start with "Failed to open input stream" for a metadata file that is gone.
+    A table whose whole directory is missing has nothing left to recover, so
+    its entry is dropped without purging (the catalog never reads the missing
+    metadata) and ``ensure_tables`` recreates it empty; the stream then rebuilds
+    bronze from Kafka. Tables with any files left are never touched.
+
+    Relies on the tables living at the catalog's default location
+    (``<warehouse>/<namespace>/<table>``), which ``ensure_tables`` guarantees.
+    """
+    namespace = NAMESPACE.split(".", 1)[1]
+    warehouse = spark.conf.get(f"spark.sql.catalog.{CATALOG}.warehouse").rstrip("/")
+    jvm = spark._jvm
+    hadoop_conf = spark._jsc.hadoopConfiguration()
+    iceberg_catalog = (
+        spark._jsparkSession.sessionState().catalogManager().catalog(CATALOG).icebergCatalog()
+    )
+
+    dropped = []
+    for row in spark.sql(f"SHOW TABLES IN {NAMESPACE}").collect():
+        table_dir = jvm.org.apache.hadoop.fs.Path(f"{warehouse}/{namespace}/{row.tableName}")
+        if table_dir.getFileSystem(hadoop_conf).exists(table_dir):
+            continue
+        identifier = jvm.org.apache.iceberg.catalog.TableIdentifier.parse(
+            f"{namespace}.{row.tableName}"
+        )
+        iceberg_catalog.dropTable(identifier, False)
+        dropped.append(f"{NAMESPACE}.{row.tableName}")
+        print(f"{NAMESPACE}.{row.tableName}: files missing from storage, catalog entry dropped")
+    return dropped
+
+
 def ensure_tables(spark: SparkSession) -> None:
-    """Create namespace and tables if missing (idempotent; safe on every job start)."""
+    """Create namespace and tables if missing (idempotent; safe on every job start).
+
+    Catalog entries left behind by wiped storage are dropped first
+    (``drop_tables_without_storage``), so a reset LocalStack volume does not
+    stop every job.
+    """
     spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {NAMESPACE}")
+    drop_tables_without_storage(spark)
 
     spark.sql(
         f"""

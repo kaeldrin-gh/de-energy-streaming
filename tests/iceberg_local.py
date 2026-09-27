@@ -19,8 +19,14 @@ ICEBERG_JAR_URL = (
 )
 
 
-def cached_iceberg_jar() -> str:
-    """Download the Iceberg runtime bundle once; return it as a file: URI.
+# A JDBC catalog like the Postgres one in docker-compose, backed by a SQLite
+# file so the catalog and the warehouse can be lost independently in tests.
+SQLITE_JAR_NAME = "sqlite-jdbc-3.46.1.3.jar"
+SQLITE_JAR_URL = f"https://repo1.maven.org/maven2/org/xerial/sqlite-jdbc/3.46.1.3/{SQLITE_JAR_NAME}"
+
+
+def cached_jar(name: str, url: str) -> str:
+    """Download a jar once; return it as a file: URI.
 
     Spark's ``spark.jars.packages`` needs an Ivy-enabled spark-submit, which a
     programmatic session does not provide; a local jar keeps the test offline
@@ -28,28 +34,50 @@ def cached_iceberg_jar() -> str:
     """
     cache = Path.home() / ".cache" / "de-energy-streaming"
     cache.mkdir(parents=True, exist_ok=True)
-    jar = cache / ICEBERG_JAR_NAME
+    jar = cache / name
     if not jar.exists():
-        urllib.request.urlretrieve(ICEBERG_JAR_URL, jar)
+        urllib.request.urlretrieve(url, jar)
     return jar.as_uri()
 
 
-def local_iceberg_session(app_name: str, warehouse: Path) -> SparkSession:
-    """Local session with a Hadoop-catalog Iceberg warehouse named ``lake``."""
-    return (
+def local_iceberg_session(
+    app_name: str, warehouse: Path, jdbc_catalog: Path | None = None
+) -> SparkSession:
+    """Local session with an Iceberg catalog named ``lake``.
+
+    Hadoop catalog by default (tables live only in the warehouse); pass
+    ``jdbc_catalog`` for a SQLite-backed JDBC catalog, the same catalog type
+    the stack runs on Postgres.
+    """
+    # Both jars on every session: PySpark keeps one JVM per test process, and a
+    # JDBC driver added by a later session is invisible to DriverManager.
+    jars = [
+        cached_jar(ICEBERG_JAR_NAME, ICEBERG_JAR_URL),
+        cached_jar(SQLITE_JAR_NAME, SQLITE_JAR_URL),
+    ]
+    catalog = {"type": "hadoop"}
+    if jdbc_catalog is not None:
+        catalog = {
+            "type": "jdbc",
+            "uri": f"jdbc:sqlite:{jdbc_catalog}",
+            "jdbc.schema-version": "V1",
+        }
+
+    builder = (
         SparkSession.builder.master("local[1]")
         .appName(app_name)
         .config("spark.ui.enabled", "false")
         .config("spark.driver.host", "localhost")
         .config("spark.sql.session.timeZone", "UTC")
         .config("spark.sql.shuffle.partitions", "1")
-        .config("spark.jars", cached_iceberg_jar())
+        .config("spark.jars", ",".join(jars))
         .config(
             "spark.sql.extensions",
             "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
         )
         .config("spark.sql.catalog.lake", "org.apache.iceberg.spark.SparkCatalog")
-        .config("spark.sql.catalog.lake.type", "hadoop")
         .config("spark.sql.catalog.lake.warehouse", warehouse.as_uri())
-        .getOrCreate()
     )
+    for key, value in catalog.items():
+        builder = builder.config(f"spark.sql.catalog.lake.{key}", value)
+    return builder.getOrCreate()
