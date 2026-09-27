@@ -8,33 +8,52 @@ task when the pipeline is unhealthy - so Airflow alerts work out of the box.
 from __future__ import annotations
 
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 import pendulum
 from airflow.decorators import dag, task
 from airflow.exceptions import AirflowException
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
-FRESHNESS_SLA_HOURS = 3
+BERLIN = ZoneInfo("Europe/Berlin")
+
+# SMARD publishes a delivery day's prices around 13:00 the afternoon before. The
+# 03:00 backfill loads them even when no live producer runs, and the 04:00 hourly
+# transform publishes them to serving, so from 05:00 local every hour of today is
+# due. Before 05:00 only yesterday is. A live producer loads days earlier; that
+# only makes the check pass sooner, never fail.
+TODAY_DUE_FROM = dt.time(5, 0)
 
 
-def describe_freshness(
-    latest: dt.datetime | None, now: dt.datetime, sla_hours: float = FRESHNESS_SLA_HOURS
-) -> tuple[str, str]:
+def due_through(now: dt.datetime) -> dt.datetime:
+    """Start of the last delivery hour (23:00 Berlin) that serving must contain."""
+    local = now.astimezone(BERLIN)
+    day = local.date() if local.time() >= TODAY_DUE_FROM else local.date() - dt.timedelta(days=1)
+    return dt.datetime.combine(day, dt.time(23, 0), tzinfo=BERLIN)
+
+
+def _local(ts: dt.datetime) -> str:
+    return ts.astimezone(BERLIN).strftime("%Y-%m-%d %H:%M %Z")
+
+
+def describe_freshness(latest: dt.datetime | None, now: dt.datetime) -> tuple[str, str]:
     """Status and a readable detail for the newest delivery hour in serving.
 
-    Day-ahead prices are published around 13:00 for the whole next day, so the
-    newest hour is usually in the future. That is reported as "ahead" rather than
-    as a negative age ("-4.8h old"), which read like a clock bug.
+    Fresh means every hour that is already due is present (see TODAY_DUE_FROM),
+    not that the newest hour is recent: day-ahead hours are usually in the
+    future, so an age limit would miss a stopped pipeline for most of a day.
     """
     if latest is None:
         return "fail", "serving.price_hourly is empty"
-    hours = (now - latest).total_seconds() / 3600
-    when = latest.astimezone(dt.UTC).strftime("%Y-%m-%d %H:%M UTC")
-    if hours <= 0:
-        return "ok", f"newest hour {when} is {-hours:.1f} h ahead (published day-ahead)"
-    if hours <= sla_hours:
-        return "ok", f"newest hour {when} is {hours:.1f} h old"
-    return "fail", f"newest hour {when} is {hours:.1f} h old, over the {sla_hours:g} h limit"
+    due = due_through(now)
+    hours = (latest - now).total_seconds() / 3600
+    position = f"{hours:.1f} h ahead" if hours >= 0 else f"{-hours:.1f} h old"
+    if latest >= due:
+        return "ok", f"newest hour {_local(latest)} ({position}); due through {_local(due)}"
+    return "fail", (
+        f"newest hour {_local(latest)} ({position}); hours through {_local(due)} are due "
+        f"and missing (the 03:00 backfill or the hourly transform did not publish them)"
+    )
 
 
 @dag(

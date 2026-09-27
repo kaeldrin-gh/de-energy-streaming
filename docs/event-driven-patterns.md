@@ -16,7 +16,7 @@ and an Airflow healthcheck around it.
 | Replay | deterministic replay of a captured SMARD sample, no network needed | `producer/replay.py` |
 | Backfill | batch job writes the same bronze table through the same MERGE | `spark/jobs/backfill_prices.py` |
 | Progress and recovery | separate checkpoints per query (bronze, DLQ); a restart resumes instead of reprocessing everything | `spark/jobs/stream_prices.py` |
-| Freshness monitoring | every 30 minutes a 3-hour SLA check writes `serving.pipeline_health` and fails the DAG when stale | `airflow/dags/energy_healthcheck.py` |
+| Freshness monitoring | every 30 minutes a check that every due hour is in serving (all of today from 05:00 Berlin) writes `serving.pipeline_health` and fails the DAG when hours are missing | `airflow/dags/energy_healthcheck.py` |
 
 ## At-least-once delivery, exactly-once effects
 
@@ -68,10 +68,15 @@ same MERGE.
 
 ## Monitoring
 
-`energy_healthcheck` runs every 30 minutes, compares `max(delivery_ts)` in the
-serving layer against a 3-hour SLA, records the result in
-`serving.pipeline_health` (surfaced in Grafana) and fails the task when the
-pipeline is stale, so Airflow alerting works without extra wiring.
+`energy_healthcheck` runs every 30 minutes and checks that every hour that is
+already due is in the serving layer. SMARD publishes a day's prices the
+afternoon before and the 03:00 backfill loads them even without a live
+producer, so from 05:00 Berlin time all of today must be present (before 05:00,
+all of yesterday). An age limit on the newest hour would not work here: that
+hour is usually tomorrow evening, so a stopped pipeline would go unnoticed for
+most of a day. The result goes to `serving.pipeline_health` (surfaced in
+Grafana) and a missing hour fails the task, so Airflow alerting works without
+extra wiring.
 
 ## What this does not claim
 

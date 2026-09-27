@@ -82,7 +82,7 @@ application plus the batch jobs submitted by Airflow):
 | First Airflow Spark task slow | task log | Ivy resolves ~100 MB of connector jars once, then cached in the `ivy-cache` volume |
 | DLQ topic growing | consume `energy.prices.invalid` | Producer schema drift; inspect messages and update `MESSAGE_SCHEMA` in `spark/jobs/stream_prices.py` |
 | Serving table empty | `serve` after backfill | Batch/stream hasn't run yet; trigger `energy_batch_pipeline` in Airflow or `make backfill` |
-| Health DAG failing | `serving.pipeline_health` | Freshness SLA is 3 h; streaming or hourly transform stopped |
+| Health DAG failing | `serving.pipeline_health` | Hours that are due (all of today from 05:00 Berlin) are missing: the 03:00 backfill failed, the hourly transform stopped, or SMARD published late. The detail names the newest hour and what was due |
 | Port already in use | `netstat -ano \| findstr 8088` (Windows) | Another Postgres/Airflow instance running; stop it or remap ports in `docker-compose.yml` |
 | Docker Desktop memory issues | Settings → Resources | Give Docker ≥ 8 GB RAM; Spark worker is capped at 2 GB |
 | News job stores NULL categories | `make news` output | classifier.dev unreachable or rate-limited; headlines are kept and the next run reclassifies them (ADR 0003) |
@@ -120,8 +120,8 @@ Airflow retries it twice.
 
 The pipeline is built so alerts can be wired in without touching code:
 
-- **Airflow** fails `energy_healthcheck` when the serving layer is staler than
-  3 hours. To send mail, add `email_on_failure: True` and an `email` list to the
+- **Airflow** fails `energy_healthcheck` when hours that are already due are
+  missing from the serving layer (all of today from 05:00 Berlin time). To send mail, add `email_on_failure: True` and an `email` list to the
   DAG's `default_args` and point Airflow at an SMTP server
   (`AIRFLOW__SMTP__SMTP_HOST`, `AIRFLOW__SMTP__SMTP_MAIL_FROM`, ...); a Slack
   provider hooks in the same way. No credentials are committed here.

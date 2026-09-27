@@ -166,7 +166,7 @@
         "type": "postgres",
         "uid": "energy-postgres"
       },
-      "description": "serving_freshness from the energy_healthcheck DAG, which runs every 30 minutes and fails when the newest serving hour is more than 3 hours stale.",
+      "description": "serving_freshness from the energy_healthcheck DAG (every 30 minutes). Fresh means every hour that is already due is in serving: all of today from 05:00 Berlin time, when the 03:00 backfill and the 04:00 transform have published it.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -174,19 +174,19 @@
           },
           "mappings": [
             {
+              "type": "value",
               "options": {
                 "ok": {
                   "color": "#0ca30c",
                   "index": 0,
                   "text": "✓ fresh"
                 },
-                "stale": {
+                "fail": {
                   "color": "#d03b3b",
                   "index": 1,
                   "text": "✕ stale"
                 }
-              },
-              "type": "value"
+              }
             }
           ],
           "thresholds": {

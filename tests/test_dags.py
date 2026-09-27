@@ -99,18 +99,49 @@ def _healthcheck_module():
     return module
 
 
-def test_freshness_wording_for_published_future_hours() -> None:
-    """Day-ahead hours are in the future; that is 'ahead', not a negative age."""
+def test_freshness_requires_every_hour_that_is_already_due() -> None:
+    """Fresh = today's hours are in serving from 05:00 Berlin (yesterday's before).
+
+    Day-ahead hours are usually in the future, so an age limit on the newest hour
+    missed a stopped pipeline for most of a day and failed every night when only
+    the 03:00 backfill loads prices.
+    """
     import datetime as dt
 
     describe = _healthcheck_module().describe_freshness
-    now = dt.datetime(2026, 9, 27, 16, 10, tzinfo=dt.UTC)
+    utc = dt.UTC
+    today_end = dt.datetime(2026, 9, 27, 21, 0, tzinfo=utc)  # 27 Sep 23:00 CEST
+    tomorrow_end = dt.datetime(2026, 9, 28, 21, 0, tzinfo=utc)  # 28 Sep 23:00 CEST
 
-    ahead = describe(dt.datetime(2026, 9, 27, 21, 0, tzinfo=dt.UTC), now)
-    recent = describe(dt.datetime(2026, 9, 27, 15, 0, tzinfo=dt.UTC), now)
-    stale = describe(dt.datetime(2026, 9, 27, 12, 0, tzinfo=dt.UTC), now)
+    # Evening with tomorrow already published (live producer running).
+    status, detail = describe(tomorrow_end, dt.datetime(2026, 9, 27, 16, 10, tzinfo=utc))
+    assert status == "ok"
+    assert detail == (
+        "newest hour 2026-09-28 23:00 CEST (28.8 h ahead); due through 2026-09-27 23:00 CEST"
+    )
 
-    assert ahead == ("ok", "newest hour 2026-09-27 21:00 UTC is 4.8 h ahead (published day-ahead)")
-    assert recent == ("ok", "newest hour 2026-09-27 15:00 UTC is 1.2 h old")
-    assert stale == ("fail", "newest hour 2026-09-27 12:00 UTC is 4.2 h old, over the 3 h limit")
-    assert describe(None, now) == ("fail", "serving.price_hourly is empty")
+    # Same evening, only today loaded (Airflow backfill only): still fresh.
+    assert describe(today_end, dt.datetime(2026, 9, 27, 16, 10, tzinfo=utc))[0] == "ok"
+
+    # 04:30 next morning, before the backfilled day is due: fresh, no nightly alarm.
+    assert describe(today_end, dt.datetime(2026, 9, 28, 2, 30, tzinfo=utc))[0] == "ok"
+
+    # 05:30 next morning and today's hours are still missing: stale.
+    status, detail = describe(today_end, dt.datetime(2026, 9, 28, 3, 30, tzinfo=utc))
+    assert status == "fail"
+    assert detail.startswith("newest hour 2026-09-27 23:00 CEST (6.5 h old); hours through")
+    assert "2026-09-28 23:00 CEST are due and missing" in detail
+
+    assert describe(None, dt.datetime(2026, 9, 27, 12, 0, tzinfo=utc)) == (
+        "fail",
+        "serving.price_hourly is empty",
+    )
+
+
+def test_freshness_due_hour_follows_berlin_time_across_dst() -> None:
+    import datetime as dt
+
+    module = _healthcheck_module()
+    # 25 Oct 2026 ends CET (UTC+1): its last hour starts 22:00 UTC, not 21:00.
+    due = module.due_through(dt.datetime(2026, 10, 25, 9, 0, tzinfo=dt.UTC))
+    assert due.astimezone(dt.UTC) == dt.datetime(2026, 10, 25, 22, 0, tzinfo=dt.UTC)
