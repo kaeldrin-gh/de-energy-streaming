@@ -10,6 +10,7 @@ Catalog layout (one Iceberg namespace, medallion layers):
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 
 from pyspark.sql import SparkSession
 
@@ -22,6 +23,7 @@ BRONZE = f"{NAMESPACE}.bronze_prices"
 SILVER = f"{NAMESPACE}.silver_prices"
 GOLD_DAILY = f"{NAMESPACE}.gold_daily"
 NEWS = f"{NAMESPACE}.news_events"
+ALL_TABLES = (BRONZE, SILVER, GOLD_DAILY, NEWS)
 
 
 def env(name: str, default: str | None = None) -> str:
@@ -208,3 +210,53 @@ def merge_news_from_view(spark: SparkSession, view: str) -> None:
                     s.model, s.fetched_at)
         """
     )
+
+
+def maintain_table(
+    spark: SparkSession,
+    table: str,
+    older_than: datetime,
+    retain_last: int,
+    min_input_files: int = 5,
+) -> dict[str, int]:
+    """Compact small data files, then expire snapshots older than ``older_than``.
+
+    The streaming job commits one snapshot and at least one small file per
+    micro-batch, so without this the metadata and file counts grow without
+    bound. Compaction rewrites files but never changes rows; expiry keeps at
+    least ``retain_last`` snapshots (and everything newer than ``older_than``)
+    for time travel. Partial progress lets compaction commit the partitions it
+    finished even if a concurrent streaming write conflicts with another one.
+
+    ``older_than`` must be timezone-aware; it is sent as UTC (``Z`` suffix) so
+    the cutoff does not depend on the Spark session time zone.
+    """
+    if older_than.tzinfo is None:
+        raise ValueError("older_than must be timezone-aware")
+    cutoff = older_than.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+    identifier = table.split(".", 1)[1]  # procedures take `namespace.table`
+    rewrite = spark.sql(
+        f"""
+        CALL {CATALOG}.system.rewrite_data_files(
+            table => '{identifier}',
+            options => map(
+                'min-input-files', '{int(min_input_files)}',
+                'partial-progress.enabled', 'true'
+            )
+        )
+        """
+    ).first()
+    expire = spark.sql(
+        f"""
+        CALL {CATALOG}.system.expire_snapshots(
+            table => '{identifier}',
+            older_than => TIMESTAMP '{cutoff}',
+            retain_last => {int(retain_last)}
+        )
+        """
+    ).first()
+    return {
+        "rewritten_files": int(rewrite.rewritten_data_files_count),
+        "added_files": int(rewrite.added_data_files_count),
+        "deleted_files": int(expire.deleted_data_files_count),
+    }

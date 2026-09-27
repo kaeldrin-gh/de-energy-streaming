@@ -38,11 +38,13 @@ flowchart LR
     PG --> G["Grafana"]
     A["Airflow"] -. hourly transform .-> T
     A -. daily backfill .-> B
+    A -. daily compaction + snapshot expiry .-> SI
 ```
 
 The streaming job is a long-running process (started with `make stream`);
 Airflow owns the batch side: the hourly transform, the daily backfill, the
-freshness health check, and an optional daily news ingest (ADR 0003).
+daily table maintenance, the freshness health check, and an optional daily news
+ingest (ADR 0003).
 
 One Iceberg namespace, three layers. **Bronze** keeps one row per
 `(region, delivery_ts)` with revision-aware upserts, so replays and upstream
@@ -55,7 +57,9 @@ The jobs: `producer/` polls SMARD and publishes one message per delivery hour;
 dead-letter topic; `backfill_prices.py` loads history through the same MERGE;
 `transform_silver.py` rebuilds silver and gold and refreshes serving;
 `news_ingest.py` classifies public energy-news headlines into Iceberg as an
-optional qualitative layer (ADR 0003); the `energy_healthcheck` DAG verifies
+optional qualitative layer (ADR 0003); `maintain_tables.py` compacts the small
+files every micro-batch leaves behind and expires snapshots older than a week
+(keeping at least ten for time travel); the `energy_healthcheck` DAG verifies
 serving freshness every 30 minutes.
 
 ## Screenshots
@@ -121,18 +125,22 @@ python -m pytest -m integration -q   # live SMARD smoke test
 ruff check . && ruff format --check .
 ```
 
-Two heavier suites run in CI rather than requiring a local install:
+The heavier suites run in CI rather than requiring a local install:
 
 - `tests/test_bronze_merge.py` starts a local Spark + Iceberg session and proves
   the revision-aware MERGE is idempotent: replaying a batch converges to one
   row per `(region, delivery_ts)`, and a stale revision never overwrites a
-  newer one. Run it locally with `pip install -e ".[sparklocal]"` on a machine
-  with a JVM.
+  newer one.
+- `tests/test_table_maintenance.py` uses the same session to prove compaction
+  turns many small files into one without changing a row, snapshot expiry
+  never removes anything inside the retention window, and a re-run on a
+  compacted table rewrites nothing. Run both locally with
+  `pip install -e ".[sparklocal]"` on a machine with a JVM.
 - `tests/test_dags.py` imports every DAG through Airflow's DagBag and checks
   that each Spark task still points at an existing job with the expected
   arguments, so broken DAGs fail the build before they reach the scheduler.
 
-CI runs lint, unit tests, both suites above, `docker compose config`, and
+CI runs lint, unit tests, the suites above, `docker compose config`, and
 Terraform validation on every push, and renders a consolidated result table on
 the run page. A daily `market-summary` workflow renders the latest published
 SMARD.de prices and the classified news headlines on its run page
@@ -180,19 +188,18 @@ market pulse on its run page also lists the latest headlines per topic
 
 ```
 producer/       SMARD client, Kafka sink, news feeds, CLIs
-spark/jobs/     streaming, backfill, transform and news jobs
+spark/jobs/     streaming, backfill, transform, maintenance and news jobs
 airflow/dags/   batch pipelines, news ingest and health check
 analysis/       BI queries, chart generation, findings
 terraform/      lakehouse bucket (LocalStack, S3 API)
 docker/         images, Postgres init, Grafana and Prometheus provisioning
 docs/           ADRs, the operations runbook and the event-driven patterns page
-tests/          parsers, replay/contract, MERGE idempotency, DAGs, news
+tests/          parsers, replay/contract, MERGE idempotency, table maintenance, DAGs, news
 ```
 
 ## Roadmap
 
 - DWD weather join to attribute negative prices to wind and solar output
-- Iceberg compaction and snapshot expiry job
 
 ## License
 

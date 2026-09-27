@@ -36,8 +36,9 @@ jobs:
         id: record
         run: echo "pytest=$(tail -n 1 pytest.txt 2>/dev/null || echo 'no output')" >> "$GITHUB_OUTPUT"
 
-  # The revision-aware MERGE from ADR 0002 against a real local Spark + Iceberg
-  # session (Hadoop catalog, temp warehouse). No Docker or cloud account needed.
+  # The revision-aware MERGE from ADR 0002 and the table-maintenance job against
+  # a real local Spark + Iceberg session (Hadoop catalog, temp warehouse). No
+  # Docker or cloud account needed.
   spark-merge-test:
     runs-on: ubuntu-latest
     outputs:
@@ -58,10 +59,10 @@ jobs:
             ~/.cache/pip
           key: spark-test-iceberg-1.8.1
       - run: pip install pyspark==3.5.9 pytest
-      - name: Run MERGE suite
+      - name: Run MERGE and maintenance suites
         run: |
           set -o pipefail
-          python -m pytest tests/test_bronze_merge.py -q | tee pytest.txt
+          python -m pytest tests/test_bronze_merge.py tests/test_table_maintenance.py -q | tee pytest.txt
       - name: Record summary
         if: always()
         id: record
@@ -142,8 +143,8 @@ jobs:
             echo "| --- | --- | --- |"
             echo "| lint | ${{ needs.lint.result }} | ruff check + ruff format |"
             echo "| test | ${{ needs.test.result }} | ${{ needs.test.outputs.pytest || '-' }} |"
-            echo "| spark-merge-test | ${{ needs.spark-merge-test.result }} | revision-aware MERGE suite - ${{ needs.spark-merge-test.outputs.pytest || '-' }} |"
-            echo "| dag-tests | ${{ needs.dag-tests.result }} | 3 DAGs import + wiring - ${{ needs.dag-tests.outputs.pytest || '-' }} |"
+            echo "| spark-merge-test | ${{ needs.spark-merge-test.result }} | revision-aware MERGE + table maintenance - ${{ needs.spark-merge-test.outputs.pytest || '-' }} |"
+            echo "| dag-tests | ${{ needs.dag-tests.result }} | 5 DAGs import + wiring - ${{ needs.dag-tests.outputs.pytest || '-' }} |"
             echo "| compose-config | ${{ needs.compose-config.result }} | ${{ needs.compose-config.outputs.services || '?' }} services |"
             echo "| terraform | ${{ needs.terraform.result }} | fmt + init -backend=false + validate |"
           } | tee -a "$GITHUB_STEP_SUMMARY"
