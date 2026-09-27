@@ -121,10 +121,9 @@ Airflow retries it twice.
 The pipeline is built so alerts can be wired in without touching code:
 
 - **Airflow** fails `energy_healthcheck` when hours that are already due are
-  missing from the serving layer (all of today from 05:00 Berlin time). To send mail, add `email_on_failure: True` and an `email` list to the
-  DAG's `default_args` and point Airflow at an SMTP server
-  (`AIRFLOW__SMTP__SMTP_HOST`, `AIRFLOW__SMTP__SMTP_MAIL_FROM`, ...); a Slack
-  provider hooks in the same way. No credentials are committed here.
+  missing from the serving layer (all of today from 05:00 Berlin time). A
+  notifier plugs in through the DAG's `default_args` (`on_failure_callback`)
+  or an Airflow provider; none is configured and no credentials are committed.
 - **GitHub Actions** opens one issue when the scheduled `market-summary` run
   fails, and skips creating another while an issue is still open.
 - **Grafana** plots `serving.pipeline_health`, so a stale pipeline is visible on
