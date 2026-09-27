@@ -77,15 +77,15 @@ http://localhost:8080 once it is running.
 
 ![Average price by hour](docs/images/findings_duck_curve.png)
 
-Fourteen weeks of real prices (2,328 hours, June to September 2026), computed
-from the marts and re-runnable with `make bi`:
+Sixteen weeks of real prices (2,712 hours, 8 June to 28 September 2026),
+computed from the marts and re-runnable with `make bi`:
 
 | Metric | Value |
 | --- | --- |
-| Evening peak vs midday trough | €178 vs €38 per MWh |
-| Hours priced below zero | 7.9% (minimum −€45.87/MWh) |
-| Negative share, weekends vs weekdays | 20.5% vs 3.1% |
-| Weekend midday vs weekday evening | −€0.83 vs €192 per MWh |
+| Evening peak vs midday trough | €188 vs €40 per MWh |
+| Hours priced below zero | 7.5% (minimum −€45.87/MWh) |
+| Negative share, weekends vs weekdays | 19.7% vs 2.7% |
+| Weekend midday vs weekday evening | €2.98 vs €206 per MWh |
 
 Full analysis, charts and caveats: [analysis/findings.md](analysis/findings.md).
 

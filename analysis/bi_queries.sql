@@ -27,7 +27,8 @@ SELECT count(*) FILTER (WHERE is_negative)                                      
        count(*)                                                                                   AS total_hours,
        round(100.0 * count(*) FILTER (WHERE is_negative) / count(*), 1)                           AS pct_negative,
        round(min(price_eur_mwh)::numeric, 2)                                                      AS min_price,
-       round(max(price_eur_mwh)::numeric, 2)                                                      AS max_price
+       round(max(price_eur_mwh)::numeric, 2)                                                      AS max_price,
+       round(avg(price_eur_mwh)::numeric, 2)                                                      AS avg_price
 FROM serving.price_hourly;
 
 \echo '== D) negative-price share: weekend vs weekday =='
@@ -85,3 +86,11 @@ SELECT local_day, avg_price, min_price, max_price, negative_hours
 FROM serving.daily_stats
 ORDER BY negative_hours DESC
 LIMIT 3;
+
+\echo '== J) weekend-midday average per weekend day (what moves the G average) =='
+SELECT to_char(delivery_ts AT TIME ZONE 'Europe/Berlin', 'YYYY-MM-DD') AS local_day,
+       round(avg(price_eur_mwh)::numeric, 2)                            AS midday_avg
+FROM serving.price_hourly
+WHERE is_weekend AND local_hour BETWEEN 11 AND 14
+GROUP BY 1
+ORDER BY 2 DESC;
