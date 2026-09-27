@@ -40,9 +40,10 @@ real captured data so the pipeline also runs fully offline.
   tests without needing any cloud credentials.
 - No secrets are stored in the repository; the LocalStack credentials are the
   well-known `test`/`test` pair and are documented as such.
-- The same Spark/Iceberg code targets real AWS S3 by changing
-  `S3_ENDPOINT`, `ICEBERG_WAREHOUSE`, and credentials - the S3A Hadoop
-  connector is the single integration point.
+- Storage goes through the S3 API via the S3A Hadoop connector, the single
+  integration point: the endpoint comes from `S3_ENDPOINT`,
+  `ICEBERG_WAREHOUSE` and credentials, not from code. Only LocalStack has
+  been tested.
 - Free managed services (e.g. a hosted Kafka or Postgres) can be substituted
   per-component through environment variables, but are deliberately not the
   default: a clone-and-run experience must not depend on anyone's account.
