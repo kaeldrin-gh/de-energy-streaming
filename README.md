@@ -102,6 +102,7 @@ make stream    # run the Kafka to Iceberg streaming job (Ctrl+C to stop)
 make live      # or poll SMARD every 60 seconds (no API key needed)
 make backfill  # or load the last few weeks of history
 make news      # or classify public energy-news headlines (optional, ADR 0003)
+make maintain  # compact Iceberg files, expire old snapshots (Airflow does this daily)
 make obs       # add Grafana and Prometheus
 ```
 
