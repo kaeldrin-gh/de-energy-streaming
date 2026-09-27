@@ -48,7 +48,9 @@ ingest (ADR 0003).
 
 One Iceberg namespace, three layers. **Bronze** keeps one row per
 `(region, delivery_ts)` with revision-aware upserts, so replays and upstream
-corrections cannot corrupt history (ADR 0002). **Silver** adds Berlin local
+corrections cannot corrupt history (ADR 0002). If the LocalStack volume is lost
+while the Postgres catalog survives, every job drops the orphaned entries on
+start and the stream rebuilds bronze from Kafka. **Silver** adds Berlin local
 time, weekend and negative-price flags. **Gold** holds daily aggregates, also
 upserted into the Postgres serving schema.
 
@@ -135,7 +137,11 @@ The heavier suites run in CI rather than requiring a local install:
 - `tests/test_table_maintenance.py` uses the same session to prove compaction
   turns many small files into one without changing a row, snapshot expiry
   never removes anything inside the retention window, and a re-run on a
-  compacted table rewrites nothing. Run both locally with
+  compacted table rewrites nothing.
+- `tests/test_catalog_recovery.py` wipes the warehouse behind a SQLite-backed
+  JDBC catalog (the same catalog type as the stack's Postgres) and proves the
+  next job start recreates the tables instead of failing, while tables that
+  still have their files are left alone. Run all three locally with
   `pip install -e ".[sparklocal]"` on a machine with a JVM.
 - `tests/test_dags.py` imports every DAG through Airflow's DagBag and checks
   that each Spark task still points at an existing job with the expected
@@ -195,7 +201,7 @@ analysis/       BI queries, chart generation, findings
 terraform/      lakehouse bucket (LocalStack, S3 API)
 docker/         images, Postgres init, Grafana and Prometheus provisioning
 docs/           ADRs, the operations runbook and the event-driven patterns page
-tests/          parsers, replay/contract, MERGE idempotency, table maintenance, DAGs, news
+tests/          parsers, replay/contract, MERGE idempotency, table maintenance, catalog recovery, DAGs, news
 ```
 
 ## Roadmap
