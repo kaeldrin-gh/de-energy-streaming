@@ -43,3 +43,11 @@ def test_repository_paths_become_links_and_commands_stay_code():
     ) in html
     assert "<code>make bi</code>" in html
     assert "blob/main/make bi" not in html
+
+
+def test_single_asterisk_italic_becomes_em_and_bold_still_works():
+    html = showcase.inline_html("the cheapest window is *nearly free*, minimum **−€45.87/MWh**")
+
+    assert "<em>nearly free</em>" in html
+    assert "<strong>−€45.87/MWh</strong>" in html
+    assert "*" not in html

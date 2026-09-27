@@ -45,6 +45,7 @@ REPO_FILE = re.compile(r"<code>([\w./-]+\.(?:md|py|sql|yml))</code>")
 def inline_html(text: str) -> str:
     escaped = html.escape(text)
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"(?<!\w)\*(\S.*?)\*(?!\w)", r"<em>\1</em>", escaped)
     escaped = re.sub(r"`(.+?)`", r"<code>\1</code>", escaped)
     # Repository paths become links; commands such as `make bi` stay code.
     return REPO_FILE.sub(rf"<a href='{REPO_URL}/blob/main/\1'><code>\1</code></a>", escaped)
@@ -206,7 +207,9 @@ pre.mermaid {{ background: #161b22; border: 1px solid #30363d; border-radius: 6p
 </style>
 <script type="module">
 import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-mermaid.initialize({{ startOnLoad: true, theme: "dark" }});
+// Natural size with horizontal scroll: fitting the wide flowchart into the
+// column shrinks its labels below readable size.
+mermaid.initialize({{ startOnLoad: true, theme: "dark", flowchart: {{ useMaxWidth: false }} }});
 </script></head><body>
 <h1>de-energy-streaming</h1>
 <p class="sub">German day-ahead power prices through Kafka, Spark Structured Streaming and
