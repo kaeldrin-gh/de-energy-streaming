@@ -39,10 +39,15 @@ NL_REPO_URL = "https://github.com/kaeldrin-gh/nl-energy-warehouse"
 DATABRICKS_REPO_URL = "https://github.com/kaeldrin-gh/databricks-energy-quality"
 
 
+REPO_FILE = re.compile(r"<code>([\w./-]+\.(?:md|py|sql|yml))</code>")
+
+
 def inline_html(text: str) -> str:
     escaped = html.escape(text)
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
-    return re.sub(r"`(.+?)`", r"<code>\1</code>", escaped)
+    escaped = re.sub(r"`(.+?)`", r"<code>\1</code>", escaped)
+    # Repository paths become links; commands such as `make bi` stay code.
+    return REPO_FILE.sub(rf"<a href='{REPO_URL}/blob/main/\1'><code>\1</code></a>", escaped)
 
 
 def markdown_to_html(markdown: str) -> str:
@@ -73,6 +78,8 @@ def markdown_to_html(markdown: str) -> str:
             output.append(f"<h2>{inline_html(stripped[3:])}</h2>")
         elif stripped.startswith("### "):
             output.append(f"<h3>{inline_html(stripped[4:])}</h3>")
+        elif len(stripped) > 2 and stripped.startswith("_") and stripped.endswith("_"):
+            output.append(f"<p><em>{inline_html(stripped[1:-1])}</em></p>")
         else:
             output.append(f"<p>{inline_html(stripped)}</p>")
     if in_table:
@@ -86,7 +93,9 @@ def live_pulse() -> str:
         settings = Settings()
         client = SmardClient(settings.smard_base_url, settings.smard_filter, settings.smard_region)
         points = client.fetch_latest(weeks=3)
-        return markdown_to_html(render_summary(points, news=None))
+        # The page already has a "Market pulse" heading; drop the run-page title.
+        summary = render_summary(points, news=None).splitlines()
+        return markdown_to_html("\n".join(line for line in summary if not line.startswith("## ")))
     except Exception:  # noqa: BLE001 - the page must render without the pulse
         return (
             "<p>Market pulse unavailable at build time. "
@@ -103,6 +112,50 @@ def live_news() -> str:
         return markdown_to_html(render_news(classify(headlines), heading=None))
     except Exception:  # noqa: BLE001 - the page must render without the news
         return "<p>Headlines unavailable at build time.</p>"
+
+
+def headline_numbers(findings: str) -> list[tuple[str, str]]:
+    """The (value, meaning) rows under "The answer in four numbers" in findings.md."""
+    section = findings.split("## The answer in four numbers", 1)[-1].split("\n## ", 1)[0]
+    return re.findall(r"^\| \*\*(.+?)\*\* \| (.+?) \|$", section, flags=re.MULTILINE)
+
+
+def data_window(findings: str) -> str:
+    """The date range on the findings' **Data** line, e.g. "8 June – 28 September 2026"."""
+    match = re.search(r"\*\*Data\*\*:.*?,\s+(.+?)\s+\(", findings, flags=re.DOTALL)
+    return " ".join(match.group(1).split()) if match else ""
+
+
+def readme_mermaid(readme: str) -> str:
+    """The README's architecture diagram, so the page cannot drift from it."""
+    match = re.search(r"```mermaid\n(.+?)```", readme, flags=re.DOTALL)
+    return match.group(1).strip() if match else ""
+
+
+def headline_section() -> str:
+    findings = (REPO_ROOT / "analysis" / "findings.md").read_text(encoding="utf-8")
+    numbers = headline_numbers(findings)
+    if not numbers:
+        return ""
+    cards = "\n".join(
+        f"<div class='card'><div class='num'>{html.escape(value)}</div>"
+        f"<div class='lbl'>{inline_html(meaning)}</div></div>"
+        for value, meaning in numbers
+    )
+    return (
+        "<h2>What the data says</h2>\n"
+        f"<p class='sub'>Computed from the marts, {html.escape(data_window(findings))}. "
+        f"Full analysis and caveats: "
+        f"<a href='{REPO_URL}/blob/main/analysis/findings.md'>findings.md</a>.</p>\n"
+        f"<div class='cards'>{cards}</div>"
+    )
+
+
+def architecture_section() -> str:
+    diagram = readme_mermaid((REPO_ROOT / "README.md").read_text(encoding="utf-8"))
+    if not diagram:
+        return ""
+    return f"<h2>Architecture</h2>\n<pre class='mermaid'>\n{html.escape(diagram)}\n</pre>"
 
 
 def build_page(out_dir: Path) -> Path:
@@ -143,7 +196,18 @@ code {{ background: #161b22; padding: 1px 5px; border-radius: 4px; }}
 figure {{ margin: 1.2rem 0; }}
 img {{ max-width: 100%; border: 1px solid #30363d; border-radius: 6px; }}
 figcaption {{ color: #8b949e; font-size: 0.88rem; margin-top: 6px; }}
-</style></head><body>
+.cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px;
+          margin-top: 12px; }}
+.card {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px 16px; }}
+.num {{ color: #7ee787; font-size: 1.45rem; font-weight: 600; }}
+.lbl {{ color: #8b949e; font-size: 0.88rem; margin-top: 4px; }}
+pre.mermaid {{ background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px;
+               overflow-x: auto; }}
+</style>
+<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+mermaid.initialize({{ startOnLoad: true, theme: "dark" }});
+</script></head><body>
 <h1>de-energy-streaming</h1>
 <p class="sub">German day-ahead power prices through Kafka, Spark Structured Streaming and
 Apache Iceberg, orchestrated with Airflow and served with PostgreSQL and Grafana.
@@ -157,6 +221,11 @@ Rebuilt daily; generated {generated}.</p>
 <a href="{NL_REPO_URL}">nl-energy-warehouse</a> ·
 <a href="{DATABRICKS_REPO_URL}">databricks-energy-quality</a>.</p>
 
+{headline_section()}
+{figures(CHARTS[:1])}
+
+{architecture_section()}
+
 <h2>Market pulse (live)</h2>
 {live_pulse()}
 
@@ -165,8 +234,8 @@ Rebuilt daily; generated {generated}.</p>
 <a href="https://classifier.dev">classifier.dev</a>; unrelated headlines are filtered out.</p>
 {live_news()}
 
-<h2>What the data says</h2>
-{figures(CHARTS)}
+<h2>More charts</h2>
+{figures(CHARTS[1:])}
 
 <h2>Screenshots</h2>
 {figures(SCREENSHOTS)}

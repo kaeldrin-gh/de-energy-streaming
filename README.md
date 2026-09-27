@@ -11,9 +11,7 @@ from SMARD.de (Bundesnetzagentur) flows through Kafka into Spark Structured
 Streaming, lands in an Apache Iceberg lakehouse, and is modeled into hourly and
 daily marts served through PostgreSQL and Grafana. Airflow orchestrates the
 batch jobs; Terraform manages the storage layer. The full stack runs locally in
-Docker with no cloud account. Storage goes through the S3 API (LocalStack
-locally), so the Spark/Iceberg code is not tied to one endpoint; it has only
-been run against LocalStack.
+Docker with no cloud account, with storage behind the S3 API (LocalStack).
 
 **Stack:** Python · Kafka (Redpanda) · Spark Structured Streaming · Apache Iceberg · Airflow · PostgreSQL · Grafana · Terraform · GitHub Actions
 
@@ -22,6 +20,15 @@ covers dbt-based analytics engineering on Dutch power prices.
 Managed-platform counterpart: [databricks-energy-quality](https://github.com/kaeldrin-gh/databricks-energy-quality)
 covers the same domain on Databricks (Unity Catalog, Delta, Lakeflow pipelines,
 Workflows).
+
+## Where to look first
+
+| If you have | Read |
+| --- | --- |
+| 2 minutes | The architecture below and the [live showcase](https://kaeldrin-gh.github.io/de-energy-streaming/) |
+| 10 minutes | `merge_bronze_from_view` in [spark/jobs/common.py](spark/jobs/common.py) (the revision-aware MERGE) and the tests that prove it in [tests/test_bronze_merge.py](tests/test_bronze_merge.py) |
+| A design discussion | [Event-driven patterns](docs/event-driven-patterns.md) and [ADR 0002: revision-aware upserts](docs/decisions/0002-revision-aware-upserts.md) |
+| An operations view | The [runbook](docs/operations.md): failure modes, table maintenance, recovery |
 
 ## Architecture
 
