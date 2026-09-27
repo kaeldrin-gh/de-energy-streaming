@@ -156,6 +156,9 @@ def architecture_section() -> str:
     diagram = readme_mermaid((REPO_ROOT / "README.md").read_text(encoding="utf-8"))
     if not diagram:
         return ""
+    # Same diagram, drawn top-down: left-to-right it is too wide for the column,
+    # and scaling it to fit shrinks the labels below readable size.
+    diagram = re.sub(r"^flowchart LR", "flowchart TB", diagram)
     return f"<h2>Architecture</h2>\n<pre class='mermaid'>\n{html.escape(diagram)}\n</pre>"
 
 
@@ -207,9 +210,7 @@ pre.mermaid {{ background: #161b22; border: 1px solid #30363d; border-radius: 6p
 </style>
 <script type="module">
 import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-// Natural size with horizontal scroll: fitting the wide flowchart into the
-// column shrinks its labels below readable size.
-mermaid.initialize({{ startOnLoad: true, theme: "dark", flowchart: {{ useMaxWidth: false }} }});
+mermaid.initialize({{ startOnLoad: true, theme: "dark" }});
 </script></head><body>
 <h1>de-energy-streaming</h1>
 <p class="sub">German day-ahead power prices through Kafka, Spark Structured Streaming and
