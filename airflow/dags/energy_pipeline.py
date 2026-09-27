@@ -3,6 +3,7 @@
 * ``energy_batch_pipeline``  - hourly: transform bronze -> silver -> gold, refresh serving tables.
 * ``energy_history_backfill`` - daily: revision-aware backfill of recent SMARD weeks.
 * ``energy_news_ingest``     - daily: news headlines + topic classification into Iceberg (ADR 0003).
+* ``energy_table_maintenance`` - daily: compact small Iceberg files, expire old snapshots.
 
 All tasks submit the same jobs that can be run manually with spark-submit,
 so Airflow owns scheduling/retries, not business logic.
@@ -92,6 +93,26 @@ def energy_news_ingest():
     spark_task("ingest_news", f"{JOBS_DIR}/news_ingest.py")
 
 
+@dag(
+    dag_id="energy_table_maintenance",
+    description="Daily Iceberg compaction and snapshot expiry (7-day time travel).",
+    # After the 03:00 backfill and clear of the hourly transform at :00.
+    schedule="30 4 * * *",
+    start_date=pendulum.datetime(2026, 9, 1, tz="Europe/Berlin"),
+    catchup=False,
+    max_active_runs=1,
+    tags=["energy", "ops"],
+    default_args=DEFAULT_ARGS,
+)
+def energy_table_maintenance():
+    spark_task(
+        "maintain_iceberg_tables",
+        f"{JOBS_DIR}/maintain_tables.py",
+        ["--retain-days", "7", "--retain-last", "10"],
+    )
+
+
 energy_batch_pipeline()
 energy_history_backfill()
 energy_news_ingest()
+energy_table_maintenance()

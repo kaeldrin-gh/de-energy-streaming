@@ -7,17 +7,14 @@ This is the executable form of ADR 0002. Three properties must hold:
 * an older revision can never regress a newer one.
 
 Requires a JVM and PySpark (``pip install -e ".[sparklocal]"``); skipped
-automatically when either is missing. CI runs it on every push. The Iceberg
-runtime jar (the same one the Spark image bakes in) is downloaded once into
-``~/.cache/de-energy-streaming``.
+automatically when either is missing. CI runs it on every push; the session
+comes from ``tests/iceberg_local.py``.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import shutil
-import urllib.request
-from pathlib import Path
 
 import pytest
 
@@ -29,12 +26,8 @@ if shutil.which("java") is None:
 from pyspark.sql import SparkSession  # noqa: E402
 from pyspark.sql import functions as F  # noqa: E402
 from spark.jobs import common  # noqa: E402
+from tests.iceberg_local import local_iceberg_session  # noqa: E402
 
-ICEBERG_JAR_NAME = "iceberg-spark-runtime-3.5_2.12-1.8.1.jar"
-ICEBERG_JAR_URL = (
-    "https://repo1.maven.org/maven2/org/apache/iceberg/"
-    f"iceberg-spark-runtime-3.5_2.12/1.8.1/{ICEBERG_JAR_NAME}"
-)
 BRONZE_SCHEMA = (
     "region string, delivery_ts timestamp, price_eur_mwh double, "
     "source string, fetched_at timestamp"
@@ -42,42 +35,11 @@ BRONZE_SCHEMA = (
 HOUR = dt.timedelta(hours=1)
 
 
-def cached_iceberg_jar() -> str:
-    """Download the Iceberg runtime bundle once; return it as a file: URI.
-
-    Spark's ``spark.jars.packages`` needs an Ivy-enabled spark-submit, which a
-    programmatic session does not provide; a local jar keeps the test offline
-    after the first download and avoids Ivy in CI.
-    """
-    cache = Path.home() / ".cache" / "de-energy-streaming"
-    cache.mkdir(parents=True, exist_ok=True)
-    jar = cache / ICEBERG_JAR_NAME
-    if not jar.exists():
-        urllib.request.urlretrieve(ICEBERG_JAR_URL, jar)
-    return jar.as_uri()
-
-
 @pytest.fixture(scope="module")
 def spark(tmp_path_factory) -> SparkSession:
     """Local session with a Hadoop-catalog Iceberg warehouse in a temp dir."""
     warehouse = tmp_path_factory.mktemp("warehouse")
-    session = (
-        SparkSession.builder.master("local[1]")
-        .appName("test_bronze_merge")
-        .config("spark.ui.enabled", "false")
-        .config("spark.driver.host", "localhost")
-        .config("spark.sql.session.timeZone", "UTC")
-        .config("spark.sql.shuffle.partitions", "1")
-        .config("spark.jars", cached_iceberg_jar())
-        .config(
-            "spark.sql.extensions",
-            "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
-        )
-        .config("spark.sql.catalog.lake", "org.apache.iceberg.spark.SparkCatalog")
-        .config("spark.sql.catalog.lake.type", "hadoop")
-        .config("spark.sql.catalog.lake.warehouse", warehouse.as_uri())
-        .getOrCreate()
-    )
+    session = local_iceberg_session("test_bronze_merge", warehouse)
     common.ensure_tables(session)
     yield session
     session.stop()
