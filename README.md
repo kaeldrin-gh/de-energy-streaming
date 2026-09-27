@@ -11,8 +11,11 @@ from SMARD.de (Bundesnetzagentur) flows through Kafka into Spark Structured
 Streaming, lands in an Apache Iceberg lakehouse, and is modeled into hourly and
 daily marts served through PostgreSQL and Grafana. Airflow orchestrates the
 batch jobs; Terraform manages the storage layer. The full stack runs locally in
-Docker with no cloud account, and the same Spark/Iceberg code points at AWS S3
-by changing environment variables.
+Docker with no cloud account. Storage goes through the S3 API (LocalStack
+locally), so the Spark/Iceberg code is not tied to one endpoint; it has only
+been run against LocalStack.
+
+**Stack:** Python · Kafka (Redpanda) · Spark Structured Streaming · Apache Iceberg · Airflow · PostgreSQL · Grafana · Terraform · GitHub Actions
 
 Batch counterpart: [nl-energy-warehouse](https://github.com/kaeldrin-gh/nl-energy-warehouse)
 covers dbt-based analytics engineering on Dutch power prices.
@@ -27,7 +30,7 @@ flowchart LR
     SMARD["SMARD.de"] -->|live poll / replay| P["producer (Python)"]
     P -->|keyed JSON| K[("Redpanda (Kafka API)")]
     K --> S["Spark Structured Streaming"]
-    S -->|"MERGE, newest revision wins"| B[("Iceberg bronze on S3")]
+    S -->|"MERGE, newest revision wins"| B[("Iceberg bronze (S3 API, LocalStack)")]
     S -->|malformed records| D[("DLQ topic")]
     B --> T["Spark batch transform"]
     T --> SI[("Iceberg silver + gold")]
@@ -80,34 +83,6 @@ from the marts and re-runnable with `make bi`:
 
 Full analysis, charts and caveats: [analysis/findings.md](analysis/findings.md).
 
-## News context (optional)
-
-`make news` fetches public energy-news headlines (pv-magazine, Clean Energy
-Wire, Solarserver) and classifies each one through
-[classifier.dev](https://classifier.dev) - a keyless, free HTTP classifier that
-returns a calibrated confidence per label - into `grid and infrastructure /
-policy and regulation / power prices and markets / gas / renewables / batteries
-and storage / hydrogen / companies and projects / weather`. Headlines whose
-topic is `none of these` are stored with a NULL category (unrelated news never
-pollutes the analytics), and the reports show the energy topics plus how many
-headlines were general news and filtered out. Headlines land in
-`lake.energy.news_events` and can be joined to price days:
-
-```sql
-SELECT date_trunc('day', n.published_ts) AS day, n.category, count(*)
-FROM lake.energy.news_events n
-WHERE n.category IS NOT NULL
-GROUP BY 1, 2
-ORDER BY 1 DESC;
-```
-
-The job is optional and fails soft (ADR 0003): if the classifier is down,
-headlines are stored with a NULL category and the next run reclassifies them.
-The endpoint can be overridden with `CLASSIFIER_URL` and the feeds with
-`NEWS_FEEDS` (see `.env.example`); there is no account, key, or cost. The daily
-market pulse on its run page also lists the latest headlines per topic
-(`--no-news` for a pure-price pulse).
-
 ## Quickstart
 
 Requires Docker Desktop (free) with about 8 GB of RAM; on Windows, enable WSL2.
@@ -134,8 +109,9 @@ make obs       # add Grafana and Prometheus
 | LocalStack S3 | http://localhost:4566 | `test` / `test` |
 
 Configuration is environment-driven and the defaults in `.env.example` match
-the compose stack, so nothing needs editing. Pointing Spark at real S3 means
-setting `S3_ENDPOINT`, `ICEBERG_WAREHOUSE` and credentials; no code changes.
+the compose stack, so nothing needs editing. The storage endpoint is set by
+`S3_ENDPOINT`, `ICEBERG_WAREHOUSE` and credentials rather than in code; only
+LocalStack has been tested.
 
 ## Tests
 
@@ -165,6 +141,34 @@ SMARD.de prices and the classified news headlines on its run page
 Operational commands and failure modes are in
 [docs/operations.md](docs/operations.md).
 
+## News context (optional)
+
+`make news` fetches public energy-news headlines (pv-magazine, Clean Energy
+Wire, Solarserver) and classifies each one through
+[classifier.dev](https://classifier.dev) - a keyless, free HTTP classifier that
+returns a calibrated confidence per label - into `grid and infrastructure /
+policy and regulation / power prices and markets / gas / renewables / batteries
+and storage / hydrogen / companies and projects / weather`. Headlines whose
+topic is `none of these` are stored with a NULL category (unrelated news never
+pollutes the analytics), and the reports show the energy topics plus how many
+headlines were general news and filtered out. Headlines land in
+`lake.energy.news_events` and can be joined to price days:
+
+```sql
+SELECT date_trunc('day', n.published_ts) AS day, n.category, count(*)
+FROM lake.energy.news_events n
+WHERE n.category IS NOT NULL
+GROUP BY 1, 2
+ORDER BY 1 DESC;
+```
+
+The job is optional and fails soft (ADR 0003): if the classifier is down,
+headlines are stored with a NULL category and the next run reclassifies them.
+The endpoint can be overridden with `CLASSIFIER_URL` and the feeds with
+`NEWS_FEEDS` (see `.env.example`); there is no account, key, or cost. The daily
+market pulse on its run page also lists the latest headlines per topic
+(`--no-news` for a pure-price pulse).
+
 ## Design notes
 
 - [Event-driven patterns: delivery, ordering, retries, DLQ, replay](docs/event-driven-patterns.md)
@@ -179,7 +183,7 @@ producer/       SMARD client, Kafka sink, news feeds, CLIs
 spark/jobs/     streaming, backfill, transform and news jobs
 airflow/dags/   batch pipelines, news ingest and health check
 analysis/       BI queries, chart generation, findings
-terraform/      lakehouse bucket (LocalStack or AWS)
+terraform/      lakehouse bucket (LocalStack, S3 API)
 docker/         images, Postgres init, Grafana and Prometheus provisioning
 docs/           ADRs, the operations runbook and the event-driven patterns page
 tests/          parsers, replay/contract, MERGE idempotency, DAGs, news
