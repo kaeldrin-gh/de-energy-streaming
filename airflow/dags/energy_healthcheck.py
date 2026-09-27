@@ -7,12 +7,34 @@ task when the pipeline is unhealthy - so Airflow alerts work out of the box.
 
 from __future__ import annotations
 
+import datetime as dt
+
 import pendulum
 from airflow.decorators import dag, task
 from airflow.exceptions import AirflowException
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 FRESHNESS_SLA_HOURS = 3
+
+
+def describe_freshness(
+    latest: dt.datetime | None, now: dt.datetime, sla_hours: float = FRESHNESS_SLA_HOURS
+) -> tuple[str, str]:
+    """Status and a readable detail for the newest delivery hour in serving.
+
+    Day-ahead prices are published around 13:00 for the whole next day, so the
+    newest hour is usually in the future. That is reported as "ahead" rather than
+    as a negative age ("-4.8h old"), which read like a clock bug.
+    """
+    if latest is None:
+        return "fail", "serving.price_hourly is empty"
+    hours = (now - latest).total_seconds() / 3600
+    when = latest.astimezone(dt.UTC).strftime("%Y-%m-%d %H:%M UTC")
+    if hours <= 0:
+        return "ok", f"newest hour {when} is {-hours:.1f} h ahead (published day-ahead)"
+    if hours <= sla_hours:
+        return "ok", f"newest hour {when} is {hours:.1f} h old"
+    return "fail", f"newest hour {when} is {hours:.1f} h old, over the {sla_hours:g} h limit"
 
 
 @dag(
@@ -30,17 +52,7 @@ def energy_healthcheck():
         hook = PostgresHook(postgres_conn_id="serving")
         row = hook.get_first("SELECT max(delivery_ts) FROM serving.price_hourly")
         latest = row[0] if row else None
-
-        if latest is None:
-            status, detail = "fail", "serving.price_hourly is empty"
-        else:
-            age_hours = (
-                pendulum.now("UTC") - pendulum.instance(latest).in_timezone("UTC")
-            ).total_hours()
-            if age_hours <= FRESHNESS_SLA_HOURS:
-                status, detail = "ok", f"latest hour {latest.isoformat()} ({age_hours:.1f}h old)"
-            else:
-                status, detail = "fail", f"latest hour {latest.isoformat()} is {age_hours:.1f}h old"
+        status, detail = describe_freshness(latest, dt.datetime.now(dt.UTC))
 
         hook.run(
             """
