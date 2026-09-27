@@ -30,6 +30,7 @@ EXPECTED_SCHEDULES = {
     "energy_history_backfill": "0 3 * * *",
     "energy_healthcheck": "*/30 * * * *",
     "energy_news_ingest": "0 6 * * *",
+    "energy_table_maintenance": "30 4 * * *",
 }
 
 
@@ -60,6 +61,11 @@ def test_batch_dags_submit_existing_jobs_to_the_cluster(dagbag: DagBag) -> None:
         ("energy_batch_pipeline", "transform_silver_gold", ["--since-hours", "168"]),
         ("energy_history_backfill", "backfill_recent_weeks", ["--weeks", "2"]),
         ("energy_news_ingest", "ingest_news", []),
+        (
+            "energy_table_maintenance",
+            "maintain_iceberg_tables",
+            ["--retain-days", "7", "--retain-last", "10"],
+        ),
     ]
     for dag_id, task_id, application_args in expected:
         task = get_dag(dagbag, dag_id).get_task(task_id)

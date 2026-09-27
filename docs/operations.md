@@ -18,6 +18,7 @@ ordering and the DLQ, see [event-driven-patterns.md](event-driven-patterns.md).
 | Streaming job | `make stream` (foreground) |
 | Batch backfill | `make backfill` |
 | News enrichment (optional) | `make news` |
+| Iceberg maintenance | `make maintain` (also daily at 04:30 via `energy_table_maintenance`) |
 | Observability stack | `make obs` |
 
 ## Inspecting the platform
@@ -84,6 +85,35 @@ application plus the batch jobs submitted by Airflow):
 | Port already in use | `netstat -ano \| findstr 8088` (Windows) | Another Postgres/Airflow instance running; stop it or remap ports in `docker-compose.yml` |
 | Docker Desktop memory issues | Settings → Resources | Give Docker ≥ 8 GB RAM; Spark worker is capped at 2 GB |
 | News job stores NULL categories | `make news` output | classifier.dev unreachable or rate-limited; headlines are kept and the next run reclassifies them (ADR 0003) |
+
+## Table maintenance
+
+Every streaming micro-batch and every hourly MERGE commits a new Iceberg
+snapshot and writes small data files. `energy_table_maintenance` runs
+`spark/jobs/maintain_tables.py` daily at 04:30 Europe/Berlin (after the 03:00
+backfill, between hourly transforms). For each table in `lake.energy` it:
+
+1. runs `rewrite_data_files` (bin-packing small files per partition, with
+   partial progress: a file group whose commit conflicts with a concurrent
+   streaming write is skipped and compacted on the next run), then
+2. runs `expire_snapshots`, removing snapshots older than 7 days while always
+   keeping the newest 10, and deleting the data files no remaining snapshot
+   references.
+
+Time travel therefore reaches back at least 7 days. Compaction never changes
+rows, and `tests/test_table_maintenance.py` checks that. To inspect the effect:
+
+```sql
+SELECT count(*) FROM lake.energy.bronze_prices.files;      -- data files
+SELECT count(*) FROM lake.energy.bronze_prices.snapshots;  -- snapshots kept
+```
+
+The job prints per table how many files it compacted and how many it deleted.
+Iceberg 1.8.1 can also log "partial-progress.enabled is true but N rewrite
+commits failed" after a rewrite that succeeded (in the tests, N = 9 after a
+single successful commit, out of `partial-progress.max-commits` = 10), so read
+the printed counts rather than that line. Any other error fails the task, and
+Airflow retries it twice.
 
 ## Alerting
 
