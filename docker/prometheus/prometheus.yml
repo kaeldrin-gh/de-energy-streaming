@@ -14,12 +14,14 @@ scrape_configs:
       - targets: ["statsd-exporter:9102"]
 
   # Spark's built-in Prometheus servlet (spark/conf/metrics.properties).
+  # The master and worker serve their own metrics under /metrics/<role>/prometheus/
+  # (the trailing slash matters: without it the UI answers with a redirect).
   - job_name: spark-master
-    metrics_path: /metrics/prometheus
+    metrics_path: /metrics/master/prometheus/
     static_configs:
       - targets: ["spark-master:8080"]
 
   - job_name: spark-worker
-    metrics_path: /metrics/prometheus
+    metrics_path: /metrics/worker/prometheus/
     static_configs:
       - targets: ["spark-worker:8081"]

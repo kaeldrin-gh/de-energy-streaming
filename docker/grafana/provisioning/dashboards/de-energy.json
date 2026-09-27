@@ -2,10 +2,63 @@
   "annotations": {
     "list": []
   },
+  "description": "Serving layer of de-energy-streaming: SMARD.de day-ahead prices for DE-LU after the Kafka -> Spark -> Iceberg pipeline, plus the pipeline's own health.",
   "editable": true,
   "fiscalYearStartMonth": 0,
-  "graphTooltip": 0,
+  "graphTooltip": 1,
   "panels": [
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "energy-postgres"
+      },
+      "description": "Price of the newest delivery hour SMARD has published. Day-ahead prices are published around 13:00 for the next day, so this hour is usually tomorrow evening.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "#3987e5",
+            "mode": "fixed"
+          },
+          "decimals": 2,
+          "unit": "currencyEUR"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 0,
+        "y": 0
+      },
+      "id": 5,
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "text": {
+          "valueSize": 44
+        }
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT price_eur_mwh AS \"price\" FROM serving.price_hourly WHERE region = 'DE-LU' ORDER BY delivery_ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Newest hour, EUR/MWh",
+      "type": "stat"
+    },
     {
       "datasource": {
         "type": "postgres",
@@ -13,11 +66,282 @@
       },
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "drawStyle": "line",
-            "fillOpacity": 8,
-            "lineWidth": 1
+          "color": {
+            "fixedColor": "#3987e5",
+            "mode": "fixed"
           },
+          "decimals": 2,
+          "unit": "currencyEUR"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 5,
+        "y": 0
+      },
+      "id": 6,
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "text": {
+          "valueSize": 44
+        }
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT avg(price_eur_mwh) AS \"average\" FROM serving.price_hourly WHERE region = 'DE-LU' AND $__timeFilter(delivery_ts)",
+          "refId": "A"
+        }
+      ],
+      "title": "Average, EUR/MWh",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "energy-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "#3987e5",
+            "mode": "fixed"
+          },
+          "decimals": 0,
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 10,
+        "y": 0
+      },
+      "id": 7,
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "text": {
+          "valueSize": 44
+        }
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) FILTER (WHERE is_negative) AS \"hours\" FROM serving.price_hourly WHERE region = 'DE-LU' AND $__timeFilter(delivery_ts)",
+          "refId": "A"
+        }
+      ],
+      "title": "Hours below €0",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "energy-postgres"
+      },
+      "description": "serving_freshness from the energy_healthcheck DAG, which runs every 30 minutes and fails when the newest serving hour is more than 3 hours stale.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "ok": {
+                  "color": "#0ca30c",
+                  "index": 0,
+                  "text": "✓ fresh"
+                },
+                "stale": {
+                  "color": "#d03b3b",
+                  "index": 1,
+                  "text": "✕ stale"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#d03b3b",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 15,
+        "y": 0
+      },
+      "id": 8,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^status$/",
+          "values": false
+        },
+        "textMode": "value",
+        "text": {
+          "valueSize": 44
+        }
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT status FROM serving.pipeline_health WHERE check_name = 'serving_freshness'",
+          "refId": "A"
+        }
+      ],
+      "title": "Serving freshness",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Share of Prometheus scrape targets (Spark master, Spark worker, Airflow statsd exporter, Prometheus) answering right now.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#d03b3b",
+                "value": null
+              },
+              {
+                "color": "#0ca30c",
+                "value": 100
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "text": {
+          "valueSize": 44
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * sum(up) / count(up)",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Scrape targets up",
+      "type": "stat",
+      "timeFrom": "5m",
+      "hideTimeOverride": true
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "energy-postgres"
+      },
+      "description": "Hourly day-ahead price. The range runs one day past now, because tomorrow's prices are already published.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "#3987e5",
+            "mode": "fixed"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#898781",
+                "value": null
+              },
+              {
+                "color": "#898781",
+                "value": 0
+              }
+            ]
+          },
+          "decimals": 0,
           "unit": "currencyEUR"
         },
         "overrides": []
@@ -26,13 +350,14 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 0
+        "y": 4
       },
       "id": 1,
       "options": {
         "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
+          "displayMode": "hidden",
+          "placement": "bottom",
+          "showLegend": false
         },
         "tooltip": {
           "mode": "single",
@@ -43,11 +368,11 @@
         {
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT delivery_ts AS time, price_eur_mwh AS \"price EUR/MWh\" FROM serving.price_hourly WHERE $__timeFilter(delivery_ts) AND region = 'DE-LU' ORDER BY delivery_ts",
+          "rawSql": "SELECT delivery_ts AS time, price_eur_mwh AS \"price\" FROM serving.price_hourly WHERE $__timeFilter(delivery_ts) AND region = 'DE-LU' ORDER BY delivery_ts",
           "refId": "A"
         }
       ],
-      "title": "Day-ahead price (DE-LU)",
+      "title": "Day-ahead price, DE-LU (EUR/MWh)",
       "type": "timeseries"
     },
     {
@@ -56,29 +381,56 @@
         "uid": "energy-postgres"
       },
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {
+          "color": {
+            "fixedColor": "#3987e5",
+            "mode": "fixed"
+          },
+          "custom": {
+            "fillOpacity": 100,
+            "lineWidth": 0
+          },
+          "decimals": 0,
+          "unit": "none"
+        },
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
+        "h": 8,
+        "w": 12,
         "x": 0,
-        "y": 10
+        "y": 14
       },
-      "id": 2,
+      "id": 3,
       "options": {
-        "showHeader": true
+        "barRadius": 0.1,
+        "barWidth": 0.6,
+        "groupWidth": 0.7,
+        "legend": {
+          "displayMode": "hidden",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "orientation": "vertical",
+        "showValue": "never",
+        "stacking": "none",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 60
       },
       "targets": [
         {
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT status, detail FROM serving.pipeline_health WHERE check_name = 'serving_freshness'",
+          "rawSql": "SELECT to_char(local_day, 'Dy DD') AS \"day\", negative_hours AS \"hours below €0\" FROM (SELECT local_day, negative_hours FROM serving.daily_stats WHERE region = 'DE-LU' ORDER BY local_day DESC LIMIT 14) last_14 ORDER BY local_day",
           "refId": "A"
         }
       ],
-      "title": "Pipeline health",
-      "type": "table"
+      "title": "Hours below €0 per day, last 14 days",
+      "type": "barchart"
     },
     {
       "datasource": {
@@ -87,67 +439,55 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "color": {
+            "fixedColor": "#3987e5",
+            "mode": "fixed"
+          },
+          "custom": {
+            "fillOpacity": 100,
+            "lineWidth": 0
+          },
+          "decimals": 0,
+          "unit": "currencyEUR"
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
-        "w": 9,
-        "x": 6,
-        "y": 10
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
       },
-      "id": 3,
+      "id": 9,
       "options": {
+        "barRadius": 0.1,
+        "barWidth": 0.6,
+        "groupWidth": 0.7,
         "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
+          "displayMode": "hidden",
+          "placement": "bottom",
+          "showLegend": false
         },
+        "orientation": "vertical",
+        "showValue": "never",
+        "stacking": "none",
         "tooltip": {
           "mode": "single",
           "sort": "none"
-        }
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 60
       },
       "targets": [
         {
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT local_day AS \"day\", negative_hours FROM serving.daily_stats WHERE region = 'DE-LU' ORDER BY local_day DESC LIMIT 14",
+          "rawSql": "SELECT lpad(local_hour::text, 2, '0') || ':00' AS \"hour\", avg(price_eur_mwh) AS \"average price\" FROM serving.price_hourly WHERE region = 'DE-LU' AND $__timeFilter(delivery_ts) GROUP BY local_hour ORDER BY local_hour",
           "refId": "A"
         }
       ],
-      "title": "Negative-price hours per day (last 14 days)",
+      "title": "Average price by hour of day (Europe/Berlin), selected range",
       "type": "barchart"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 9,
-        "x": 15,
-        "y": 10
-      },
-      "id": 4,
-      "options": {
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "expr": "up",
-          "format": "table",
-          "instant": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Scrape targets (current)",
-      "type": "table"
     }
   ],
   "refresh": "30s",
@@ -161,10 +501,10 @@
   },
   "time": {
     "from": "now-7d",
-    "to": "now"
+    "to": "now+1d"
   },
-  "timezone": "browser",
+  "timezone": "Europe/Berlin",
   "title": "German day-ahead prices",
   "uid": "de-energy",
-  "version": 1
+  "version": 2
 }

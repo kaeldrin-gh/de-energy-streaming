@@ -210,7 +210,10 @@ pre.mermaid {{ background: #161b22; border: 1px solid #30363d; border-radius: 6p
 </style>
 <script type="module">
 import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-mermaid.initialize({{ startOnLoad: true, theme: "dark" }});
+// Phones: natural size with a horizontal scroll; fitting the diagram to a narrow
+// column shrinks its labels to about a third, below readable size.
+mermaid.initialize({{ startOnLoad: true, theme: "dark",
+                      flowchart: {{ useMaxWidth: window.innerWidth >= 700 }} }});
 </script></head><body>
 <h1>de-energy-streaming</h1>
 <p class="sub">German day-ahead power prices through Kafka, Spark Structured Streaming and
