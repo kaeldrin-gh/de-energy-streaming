@@ -77,8 +77,7 @@ serving freshness every 30 minutes.
 | --- | --- |
 | ![Grafana dashboard](docs/images/grafana-dashboard.png) | ![Airflow DAG grid](docs/images/airflow-dag-grid.png) |
 
-Both are from the local stack; the Spark master UI is at
-http://localhost:8080 once it is running.
+Both come from the local stack (`make up`, then `make obs` for Grafana).
 
 ## What the data says
 
