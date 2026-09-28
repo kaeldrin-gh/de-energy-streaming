@@ -162,6 +162,13 @@ SMARD.de prices and the classified news headlines on its run page
 Operational commands and failure modes are in
 [docs/operations.md](docs/operations.md).
 
+## Design notes
+
+- [Event-driven patterns: delivery, ordering, retries, DLQ, replay](docs/event-driven-patterns.md)
+- [ADR 0001: local-first, zero-cost stack](docs/decisions/0001-local-first-zero-cost.md)
+- [ADR 0002: revision-aware upserts](docs/decisions/0002-revision-aware-upserts.md)
+- [ADR 0003: optional news enrichment](docs/decisions/0003-optional-news-enrichment.md)
+
 ## News context (optional)
 
 `make news` fetches public energy-news headlines (pv-magazine, Clean Energy
@@ -189,13 +196,6 @@ The endpoint can be overridden with `CLASSIFIER_URL` and the feeds with
 `NEWS_FEEDS` (see `.env.example`); there is no account, key, or cost. The daily
 market pulse on its run page also lists the latest headlines per topic
 (`--no-news` for a pure-price pulse).
-
-## Design notes
-
-- [Event-driven patterns: delivery, ordering, retries, DLQ, replay](docs/event-driven-patterns.md)
-- [ADR 0001: local-first, zero-cost stack](docs/decisions/0001-local-first-zero-cost.md)
-- [ADR 0002: revision-aware upserts](docs/decisions/0002-revision-aware-upserts.md)
-- [ADR 0003: optional news enrichment](docs/decisions/0003-optional-news-enrichment.md)
 
 ## Layout
 
