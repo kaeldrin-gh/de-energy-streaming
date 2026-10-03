@@ -1,8 +1,10 @@
 # Operations runbook
 
-Practical commands for a running stack. Assumes `make up` has been executed and
-the stack is healthy. For how the streaming path handles retries, duplicates,
-ordering and the DLQ, see [event-driven-patterns.md](event-driven-patterns.md).
+This runbook gives the commands for a stack that operates. Before you use it,
+run `make up` and make sure that all services are healthy.
+
+For how the streaming path handles retries, duplicates, order and the DLQ,
+refer to [event-driven-patterns.md](event-driven-patterns.md).
 
 ## Day-to-day
 
@@ -21,7 +23,7 @@ ordering and the DLQ, see [event-driven-patterns.md](event-driven-patterns.md).
 | Iceberg maintenance | `make maintain` (also daily at 04:30 via `energy_table_maintenance`) |
 | Observability stack | `make obs` |
 
-## Inspecting the platform
+## Examine the platform
 
 ```bash
 # Kafka topics and consumer lag
@@ -57,7 +59,7 @@ docker compose exec postgres psql -U energy -d serving \
   -c "SELECT * FROM serving.pipeline_health"
 ```
 
-Web UIs (all local, default credentials):
+The web UIs (all local, with the default credentials):
 
 | Service | URL | Notes |
 | --- | --- | --- |
@@ -67,8 +69,8 @@ Web UIs (all local, default credentials):
 | Spark master | http://localhost:8080 | cluster + apps |
 | Spark worker | http://localhost:8081 | |
 
-The Spark master UI after a few days of history (the long-running streaming
-application plus the batch jobs submitted by Airflow):
+The Spark master UI after some days of history. It shows the streaming
+application, which runs continuously, and the batch jobs from Airflow:
 
 ![Spark master](images/spark-master.png)
 
@@ -76,65 +78,75 @@ application plus the batch jobs submitted by Airflow):
 
 | Symptom | First check | Cause / fix |
 | --- | --- | --- |
-| `make stream` exits with "NoSuchBucket" | `docker compose logs localstack` | LocalStack volume was reset. `docker compose up -d` recreates the bucket via `localstack-init`; or run `make infra` |
-| A job logs "files missing from storage, catalog entry dropped" | job output | LocalStack lost the table files but the Postgres catalog kept the entries. Every job heals this on start (`drop_tables_without_storage` in `spark/jobs/common.py`): the empty tables are recreated and `make stream` re-reads Kafka from the start (the checkpoint was lost too). `make backfill` + a transform rebuild the history beyond Kafka's retention |
-| `make stream` exits with Iceberg "NotFoundException" for a metadata file | `docker compose exec postgres psql -U energy -d iceberg -c "SELECT * FROM iceberg_tables;"` | Partial loss: some of a table's files survived, so it is not dropped automatically. Clear the entries (`DELETE FROM iceberg_tables WHERE table_namespace='energy';`) and restart the stream; `make backfill` + a transform rebuild the data |
-| First Airflow Spark task slow | task log | Ivy resolves ~100 MB of connector jars once, then cached in the `ivy-cache` volume |
-| DLQ topic growing | consume `energy.prices.invalid` | Producer schema drift; inspect messages and update `MESSAGE_SCHEMA` in `spark/jobs/stream_prices.py` |
-| Serving table empty | `serve` after backfill | Batch/stream hasn't run yet; trigger `energy_batch_pipeline` in Airflow or `make backfill` |
-| Health DAG failing | `serving.pipeline_health` | Hours that are due (all of today from 05:00 Berlin) are missing: the 03:00 backfill failed, the hourly transform stopped, or SMARD published late. The detail names the newest hour and what was due |
-| Port already in use | `netstat -ano \| findstr 8088` (Windows) | Another Postgres/Airflow instance running; stop it or remap ports in `docker-compose.yml` |
-| Docker Desktop memory issues | Settings → Resources | Give Docker ≥ 8 GB RAM; Spark worker is capped at 2 GB |
-| News job stores NULL categories | `make news` output | classifier.dev unreachable or rate-limited; headlines are kept and the next run reclassifies them (ADR 0003) |
+| `make stream` stops with "NoSuchBucket" | `docker compose logs localstack` | The LocalStack volume is empty. Run `docker compose up -d`: `localstack-init` makes the bucket again. Or run `make infra` |
+| A job shows "files missing from storage, catalog entry dropped" | The job output | LocalStack lost the table files, but the Postgres catalog kept the entries. Each job repairs this when it starts (`drop_tables_without_storage` in `spark/jobs/common.py`). It makes the tables again, empty. `make stream` then reads Kafka from the start, because the checkpoint is also lost. To load the history that Kafka no longer keeps, run `make backfill` and then a transform |
+| `make stream` stops with Iceberg "NotFoundException" for a metadata file | `docker compose exec postgres psql -U energy -d iceberg -c "SELECT * FROM iceberg_tables;"` | Some files of a table are lost, but not all. Thus, the job does not remove the entry. Delete the entries (`DELETE FROM iceberg_tables WHERE table_namespace='energy';`). Start the stream again. Run `make backfill` and then a transform to load the data again |
+| The first Airflow Spark task is slow | The task log | Ivy downloads approximately 100 MB of connector jars one time. The `ivy-cache` volume keeps them for the next runs |
+| The DLQ topic becomes larger | Read `energy.prices.invalid` | The producer schema changed. Examine the messages. Then update `MESSAGE_SCHEMA` in `spark/jobs/stream_prices.py` |
+| A serving table is empty | `serve` after a backfill | The batch or the stream did not run yet. Start `energy_batch_pipeline` in Airflow, or run `make backfill` |
+| The health DAG fails | `serving.pipeline_health` | Hours that are due are missing (all of today from 05:00 Berlin time). Possible causes: the 03:00 backfill failed, the hourly transform stopped, or SMARD published late. The detail shows the newest hour and the hours that were due |
+| A port is already in use | `netstat -ano \| findstr 8088` (Windows) | Another Postgres or Airflow instance uses the port. Stop it, or change the ports in `docker-compose.yml` |
+| Docker Desktop does not have sufficient memory | Settings → Resources | Give a minimum of 8 GB RAM to Docker. The Spark worker uses a maximum of 2 GB |
+| The news job keeps NULL categories | The `make news` output | classifier.dev is not available or limits the requests. The job keeps the headlines. The next run gives them a topic (ADR 0003) |
 
 ## Table maintenance
 
-Every streaming micro-batch and every hourly MERGE commits a new Iceberg
-snapshot and writes small data files. `energy_table_maintenance` runs
-`spark/jobs/maintain_tables.py` daily at 04:30 Europe/Berlin (after the 03:00
-backfill, between hourly transforms). For each table in `lake.energy` it:
+Each streaming micro-batch and each hourly MERGE makes a new Iceberg snapshot.
+Each one also writes small data files. The `energy_table_maintenance` DAG runs
+`spark/jobs/maintain_tables.py` each day at 04:30 Europe/Berlin. This time is
+after the 03:00 backfill and between two hourly transforms.
 
-1. runs `rewrite_data_files` (bin-packing small files per partition, with
-   partial progress: a file group whose commit conflicts with a concurrent
-   streaming write is skipped and compacted on the next run), then
-2. runs `expire_snapshots`, removing snapshots older than 7 days while always
-   keeping the newest 10, and deleting the data files no remaining snapshot
-   references.
+For each table in `lake.energy`, the job does these steps:
 
-Time travel therefore reaches back at least 7 days. Compaction never changes
-rows, and `tests/test_table_maintenance.py` checks that. To inspect the effect:
+1. It runs `rewrite_data_files`. This merges the small files in each
+   partition (bin-packing). Partial progress is on. If a file group has a
+   conflict with a streaming write, the job skips that group. The next run
+   merges it.
+2. It runs `expire_snapshots`. This removes the snapshots that are older than
+   7 days, but it always keeps the newest 10. It also deletes the data files
+   that no snapshot uses.
+
+Thus, time travel goes back a minimum of 7 days. Compaction never changes rows.
+`tests/test_table_maintenance.py` checks this. To see the result, use these
+queries:
 
 ```sql
 SELECT count(*) FROM lake.energy.bronze_prices.files;      -- data files
 SELECT count(*) FROM lake.energy.bronze_prices.snapshots;  -- snapshots kept
 ```
 
-The job prints per table how many files it compacted and how many it deleted.
-Iceberg 1.8.1 can also log "partial-progress.enabled is true but N rewrite
-commits failed" after a rewrite that succeeded (in the tests, N = 9 after a
-single successful commit, out of `partial-progress.max-commits` = 10), so read
-the printed counts rather than that line. Any other error fails the task, and
-Airflow retries it twice.
+For each table, the job shows how many files it merged and how many it
+deleted.
+
+After a successful rewrite, Iceberg 1.8.1 can show this message:
+"partial-progress.enabled is true but N rewrite commits failed". This message
+is not a failure count. In the tests, N was 9 after one successful commit
+(`partial-progress.max-commits` is 10). Use the counts that the job shows.
+
+All other errors make the task fail. Airflow then tries the task two more
+times.
 
 ## Alerting
 
-The pipeline is built so alerts can be wired in without touching code:
+You can add alerts without a change to the code:
 
-- **Airflow** fails `energy_healthcheck` when hours that are already due are
-  missing from the serving layer (all of today from 05:00 Berlin time). A
-  notifier plugs in through the DAG's `default_args` (`on_failure_callback`)
-  or an Airflow provider; none is configured and no credentials are committed.
-- **GitHub Actions** opens one issue when the scheduled `market-summary` run
-  fails, and skips creating another while an issue is still open.
-- **Grafana** plots `serving.pipeline_health`, so a stale pipeline is visible on
-  the dashboard before any alert fires.
+- **Airflow** makes `energy_healthcheck` fail when hours that are due are
+  missing from the serving layer. From 05:00 Berlin time, all hours of today
+  are due. To send a notification, add a notifier through the DAG
+  `default_args` (`on_failure_callback`) or through an Airflow provider. The
+  repository has no notifier and no credentials.
+- **GitHub Actions** opens an issue when the scheduled `market-summary` run
+  fails. It does not open a second issue while one is open.
+- **Grafana** shows `serving.pipeline_health`. Thus, you can see an old
+  pipeline state on the dashboard before an alert starts.
 
 ## Data semantics worth remembering
 
-- **`null` prices in SMARD responses are normal** - they are future hours of the
-  current week, not data loss. The parser skips them.
-- **Revisions are expected.** Ingestion is an upsert keyed by
-  `(region, delivery_ts)` where the newest `fetched_at` wins; replaying data is
-  always safe (see `docs/decisions/0002-revision-aware-upserts.md`).
-- **Timestamps** are stored as UTC; the Berlin local hour is derived in the
-  silver layer, where weekend/negative/peak flags live.
+- **`null` prices in SMARD responses are normal.** They are future hours of the
+  current week. They are not lost data. The parser ignores them.
+- **Revisions are normal.** Each ingestion is an upsert with the key
+  `(region, delivery_ts)`. The row with the newest `fetched_at` stays. Thus, a
+  replay of data is always safe (refer to
+  `docs/decisions/0002-revision-aware-upserts.md`).
+- **Timestamps** are in UTC. The silver layer calculates the Berlin local
+  hour. The weekend, negative-price and peak flags are also in silver.

@@ -6,12 +6,15 @@
 
 **[Live showcase](https://kaeldrin-gh.github.io/de-energy-streaming/)** — market pulse, findings charts and screenshots, rebuilt daily
 
-A streaming data platform for German day-ahead electricity prices. Market data
-from SMARD.de (Bundesnetzagentur) flows through Kafka into Spark Structured
-Streaming, lands in an Apache Iceberg lakehouse, and is modeled into hourly and
-daily marts served through PostgreSQL and Grafana. Airflow orchestrates the
-batch jobs; Terraform manages the storage layer. The full stack runs locally in
-Docker with no cloud account, with storage behind the S3 API (LocalStack).
+This project is a streaming data platform for German day-ahead electricity
+prices. A Python producer reads market data from SMARD.de (Bundesnetzagentur)
+and sends it to Kafka. Spark Structured Streaming writes the data to an Apache
+Iceberg lakehouse. Batch jobs make hourly and daily marts from it and write them
+to PostgreSQL. Grafana shows the marts.
+
+Airflow controls the batch jobs. Terraform manages the storage bucket. The full
+stack runs locally in Docker and needs no cloud account. Storage uses the S3
+API (LocalStack).
 
 **Stack:** Python · Kafka (Redpanda) · Spark Structured Streaming · Apache Iceberg · Airflow · PostgreSQL · Grafana · Terraform · GitHub Actions
 
@@ -48,28 +51,41 @@ flowchart LR
     A -. daily compaction + snapshot expiry .-> SI
 ```
 
-The streaming job is a long-running process (started with `make stream`);
-Airflow owns the batch side: the hourly transform, the daily backfill, the
-daily table maintenance, the freshness health check, and an optional daily news
-ingest (ADR 0003).
+The streaming job runs continuously. Start it with `make stream`. Airflow
+controls the batch jobs:
 
-One Iceberg namespace, three layers. **Bronze** keeps one row per
-`(region, delivery_ts)` with revision-aware upserts, so replays and upstream
-corrections cannot corrupt history (ADR 0002). If the LocalStack volume is lost
-while the Postgres catalog survives, every job drops the orphaned entries on
-start and the stream rebuilds bronze from Kafka. **Silver** adds Berlin local
-time, weekend and negative-price flags. **Gold** holds daily aggregates, also
-upserted into the Postgres serving schema.
+- the hourly transform
+- the daily backfill
+- the daily table maintenance
+- the freshness health check, every 30 minutes
+- the optional daily news ingest (ADR 0003)
 
-The jobs: `producer/` polls SMARD and publishes one message per delivery hour;
-`spark/jobs/stream_prices.py` writes bronze and routes malformed records to a
-dead-letter topic; `backfill_prices.py` loads history through the same MERGE;
-`transform_silver.py` rebuilds silver and gold and refreshes serving;
-`news_ingest.py` classifies public energy-news headlines into Iceberg as an
-optional qualitative layer (ADR 0003); `maintain_tables.py` compacts the small
-files every micro-batch leaves behind and expires snapshots older than a week
-(keeping at least ten for time travel); the `energy_healthcheck` DAG verifies
-serving freshness every 30 minutes.
+The lakehouse has one Iceberg namespace with three layers:
+
+- **Bronze** keeps one row for each `(region, delivery_ts)`. Each write is a
+  revision-aware upsert. Thus, replays and upstream corrections cannot change
+  the history incorrectly (ADR 0002).
+- **Silver** adds the Berlin local time, a weekend flag and a negative-price
+  flag.
+- **Gold** keeps the daily aggregates. The transform also writes them to the
+  Postgres serving schema.
+
+The Postgres catalog and the LocalStack files use different Docker volumes.
+If LocalStack loses its files and the catalog keeps its entries, each job
+removes these orphaned entries when it starts. Then the stream loads bronze
+again from Kafka.
+
+The jobs:
+
+| Job | What it does |
+| --- | --- |
+| `producer/` | Reads SMARD and sends one message for each delivery hour |
+| `spark/jobs/stream_prices.py` | Writes bronze. Sends malformed records to a dead-letter topic |
+| `backfill_prices.py` | Loads history with the same MERGE as the stream |
+| `transform_silver.py` | Makes silver and gold again and updates the serving tables |
+| `news_ingest.py` | Puts public energy-news headlines with a topic into Iceberg (optional, ADR 0003) |
+| `maintain_tables.py` | Merges the small files from each micro-batch. Removes snapshots older than seven days, and keeps a minimum of ten for time travel |
+| `energy_healthcheck` DAG | Checks every 30 minutes that the serving tables are current |
 
 ## Screenshots
 
@@ -97,7 +113,8 @@ Full analysis, charts and caveats: [analysis/findings.md](analysis/findings.md).
 
 ## Quickstart
 
-Requires Docker Desktop (free) with about 8 GB of RAM; on Windows, enable WSL2.
+You must have Docker Desktop (free) with approximately 8 GB of RAM. On Windows,
+enable WSL2.
 
 ```bash
 git clone https://github.com/kaeldrin-gh/de-energy-streaming.git
@@ -121,10 +138,10 @@ make obs       # add Grafana and Prometheus
 | Grafana (`make obs`) | http://localhost:3000 | `admin` / `admin` |
 | LocalStack S3 | http://localhost:4566 | `test` / `test` |
 
-Configuration is environment-driven and the defaults in `.env.example` match
-the compose stack, so nothing needs editing. The storage endpoint is set by
-`S3_ENDPOINT`, `ICEBERG_WAREHOUSE` and credentials rather than in code; only
-LocalStack has been tested.
+Environment variables control the configuration. The defaults in
+`.env.example` agree with the compose stack, so you do not have to change them.
+The variables `S3_ENDPOINT`, `ICEBERG_WAREHOUSE` and the credentials set the
+storage endpoint. The code does not contain it. The tests use only LocalStack.
 
 ## Tests
 
@@ -134,32 +151,39 @@ python -m pytest -m integration -q   # live SMARD smoke test
 ruff check . && ruff format --check .
 ```
 
-The heavier suites run in CI rather than requiring a local install:
+CI runs the larger test suites, so you do not have to install their tools
+locally:
 
-- `tests/test_bronze_merge.py` starts a local Spark + Iceberg session and proves
-  the revision-aware MERGE is idempotent: replaying a batch converges to one
-  row per `(region, delivery_ts)`, and a stale revision never overwrites a
-  newer one.
-- `tests/test_table_maintenance.py` uses the same session to prove compaction
-  turns many small files into one without changing a row, snapshot expiry
-  never removes anything inside the retention window, and a re-run on a
-  compacted table rewrites nothing.
-- `tests/test_catalog_recovery.py` wipes the warehouse behind a SQLite-backed
-  JDBC catalog (the same catalog type as the stack's Postgres) and proves the
-  next job start recreates the tables instead of failing, while tables that
-  still have their files are left alone. Run all three locally with
-  `pip install -e ".[sparklocal]"` on a machine with a JVM.
-- `tests/test_dags.py` imports every DAG through Airflow's DagBag and checks
-  that each Spark task still points at an existing job with the expected
-  arguments, so broken DAGs fail the build before they reach the scheduler.
+- `tests/test_bronze_merge.py` starts a local Spark + Iceberg session. It shows
+  that the revision-aware MERGE is idempotent. A replayed batch gives one row
+  for each `(region, delivery_ts)`. An old revision never replaces a newer one.
+- `tests/test_table_maintenance.py` uses the same session. It shows that
+  compaction merges many small files into one and does not change rows.
+  Snapshot expiry never removes a snapshot inside the retention period. A
+  second run on a compacted table does not write files again.
+- `tests/test_catalog_recovery.py` uses a JDBC catalog on SQLite. This is the
+  same catalog type as the Postgres catalog of the stack. The test deletes the
+  warehouse files. Then it shows that the next job start makes the tables again
+  and does not fail. Tables that still have their files do not change.
+- `tests/test_dags.py` loads each DAG through the Airflow DagBag. It checks
+  that each Spark task points to a job that exists, with the correct
+  arguments. Thus, a broken DAG makes the build fail before it gets to the
+  scheduler.
 
-CI runs lint, unit tests, the suites above, `docker compose config`, and
-Terraform validation on every push, and renders a consolidated result table on
-the run page. A daily `market-summary` workflow renders the latest published
-SMARD.de prices and the classified news headlines on its run page
-(`python -m producer summary`); if that run fails it opens one GitHub issue
-(deduplicated while an issue is open), so an outage does not pass silently.
-Operational commands and failure modes are in
+To run the first three suites locally, use a computer with a JVM and install
+the extra: `pip install -e ".[sparklocal]"`.
+
+For each push, CI runs the lint, the unit tests, the suites above,
+`docker compose config` and the Terraform validation. It shows one table with
+all results on the run page.
+
+Each day, the `market-summary` workflow shows the latest SMARD.de prices and
+the news headlines with their topics on its run page
+(`python -m producer summary`). If the run fails, the workflow opens a GitHub
+issue. It does not open a second issue while one is open. Thus, an outage
+always becomes visible.
+
+For the operation commands and the failure modes, refer to
 [docs/operations.md](docs/operations.md).
 
 ## Design notes
@@ -171,16 +195,19 @@ Operational commands and failure modes are in
 
 ## News context (optional)
 
-`make news` fetches public energy-news headlines (pv-magazine, Clean Energy
-Wire, Solarserver) and classifies each one through
-[classifier.dev](https://classifier.dev) - a keyless, free HTTP classifier that
-returns a calibrated confidence per label - into `grid and infrastructure /
-policy and regulation / power prices and markets / gas / renewables / batteries
-and storage / hydrogen / companies and projects / weather`. Headlines whose
-topic is `none of these` are stored with a NULL category (unrelated news never
-pollutes the analytics), and the reports show the energy topics plus how many
-headlines were general news and filtered out. Headlines land in
-`lake.energy.news_events` and can be joined to price days:
+`make news` gets public energy-news headlines from pv-magazine, Clean Energy
+Wire and Solarserver. It sends each headline to
+[classifier.dev](https://classifier.dev), a free HTTP classifier that needs no
+key. For each headline, the classifier gives a calibrated confidence for each
+topic. The topics are: `grid and infrastructure / policy and regulation /
+power prices and markets / gas / renewables / batteries and storage / hydrogen
+/ companies and projects / weather`.
+
+If the topic is `none of these`, the job keeps the headline with a NULL
+category. Thus, unrelated news does not change the analytics. The reports show
+the energy topics and the number of general headlines that they do not include.
+The headlines go into `lake.energy.news_events`. You can join them to the price
+days:
 
 ```sql
 SELECT date_trunc('day', n.published_ts) AS day, n.category, count(*)
@@ -190,12 +217,14 @@ GROUP BY 1, 2
 ORDER BY 1 DESC;
 ```
 
-The job is optional and fails soft (ADR 0003): if the classifier is down,
-headlines are stored with a NULL category and the next run reclassifies them.
-The endpoint can be overridden with `CLASSIFIER_URL` and the feeds with
-`NEWS_FEEDS` (see `.env.example`); there is no account, key, or cost. The daily
-market pulse on its run page also lists the latest headlines per topic
-(`--no-news` for a pure-price pulse).
+The news job is optional. A failure in it does not stop the price pipeline
+(ADR 0003). If the classifier is not available, the job keeps the headlines
+with a NULL category. The next run gives them a topic.
+
+To change the endpoint, set `CLASSIFIER_URL`. To change the feeds, set
+`NEWS_FEEDS` (refer to `.env.example`). The classifier needs no account and no
+key, and it is free. The daily market pulse also shows the latest headlines for
+each topic on its run page. To show only prices, use `--no-news`.
 
 ## Layout
 
